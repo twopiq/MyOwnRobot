@@ -30,8 +30,18 @@ Har dvigatel faqat `sl_core.py` (tarix, indikator, simulyator, MT5 qatlami) dan 
   tugmani qayta bosish yoki ilovani qayta ochish hisobni davom ettiradi, natija takrorlanmaydi.
 * Darvozaning t-chegarasi jami urinishlar soniga qarab Bonferroni bo'yicha oshadi (1: 1.00, 10: 2.15, 50: 2.73) —
   yuzlab urinishda tasodifan "o'tib ketgan" strategiya savdoga chiqmasligi uchun.
-* Jonli rejimda tekshirilgan strategiya bo'lmasa (yoki kill-switch ishlasa) robot `SL_RELEARN_HOURS` ni kutmasdan darhol
-  qayta o'rganadi (`SL_LEARN_UNTIL_PASS=1`, standart). To'xtatish: `state/stop.flag`.
+* Urinishlar hisobi kaliti: rejim, simvol, TF, tarix boshi va oxirgi shamning haftasi (spred kalitga kirmaydi).
+
+### Jonli savdoda to'xtamaydigan o'rganish (`SL_LIVE_CONTINUOUS=1`, standart)
+* **Ma'lumot saqlanadi:** har yangi yopilgan sham `state/bars_<SIMVOL>_<TF>.csv` ga qo'shiladi (ishga tushganda MT5 dagi
+  60 000 sham ham), o'rganish fayl + ombor + MT5 ni birlashtiradi — tarix vaqt o'tishi bilan o'sadi. Yopilgan jonli
+  bitimlar `state/live_trades.csv` ga, har shamdagi haqiqiy spred `live_state.json` ga yoziladi.
+* **O'rganish to'xtamaydi:** sikl tugagach `SL_LEARN_PAUSE_SEC` (300 s) pauza va yangi ma'lumot bilan keyingisi.
+* **Chempion / raqib:** tekshirilgan strategiya `SL_RELEARN_HOURS` dan yosh bo'lsa, yangi model uning holdout t sidan yuqori
+  natija ko'rsatgandagina almashtiriladi (aks holda saqlanmaydi ham). Muddat o'tgach joriy strategiya yangi ma'lumotda
+  qaytadan sinovdan o'tishi kerak.
+* **Haqiqiy xarajat:** jonli kuzatilgan spred (median) sozlamadagidan katta bo'lsa, o'rganish shuni hisobga oladi.
+* Strategiya bo'lmasa (yoki kill-switch ishlasa) savdo qilinmaydi, o'rganish esa davom etadi. To'xtatish: `state/stop.flag`.
 
 ## Qayta-qayta o'rganish va tasdiqlash (`--repeat`, `--confirm`)
 * `--repeat N` (yoki `SL_REPEAT=N`): robot yangi `seed` bilan N marta qayta o'rganadi, birinchi o'tgan urinishda to'xtaydi.

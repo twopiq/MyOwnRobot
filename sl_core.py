@@ -107,6 +107,8 @@ class Cfg:
     attempt: int = 0                # shu ma'lumotdagi urinish tartibi (0 — birinchi); dvigatellar variantni shunga qarab tanlaydi
     forever: bool = False           # --learn: darvozadan o'tguncha (yoki to'xtatilguncha) uzluksiz qayta o'rganish
     until_pass: bool = True         # jonli: strategiya o'tmagan bo'lsa SL_RELEARN_HOURS kutmasdan darhol qayta o'rganish
+    live_continuous: bool = True    # jonli: o'rganish to'xtamaydi — har sikldan keyin pauza va yangi ma'lumot bilan keyingisi
+    learn_pause_sec: float = 300.0  # uzluksiz jonli o'rganishda sikllar orasidagi pauza (MT5 va savdoga CPU qoldirish uchun)
     # --- jonli himoya
     kill_window: int = 20           # oxirgi N jonli bitim
     kill_sum_r: float = -6.0        # yig'indi R shundan past bo'lsa — to'xtab, qayta o'rganadi
@@ -152,6 +154,8 @@ class Cfg:
         c.confirm = _env("SL_CONFIRM", c.confirm)
         c.forever = env_b("SL_FOREVER", c.forever)
         c.until_pass = env_b("SL_LEARN_UNTIL_PASS", c.until_pass)
+        c.live_continuous = env_b("SL_LIVE_CONTINUOUS", c.live_continuous)
+        c.learn_pause_sec = max(0.0, env_f("SL_LEARN_PAUSE_SEC", c.learn_pause_sec))
         c.kill_window = env_i("SL_KILL_WINDOW", c.kill_window)
         c.kill_sum_r = env_f("SL_KILL_SUM_R", c.kill_sum_r)
         return c

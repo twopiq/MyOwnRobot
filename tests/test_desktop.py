@@ -157,7 +157,7 @@ def test_learn_page_shows_attempts_in_forever_mode(tmp_path, monkeypatch):
         lp._on_attempt({"no": i, "ok": ok, "t": t, "exp": 0.02 * i, "n": 80, "need_t": 1.0 + 0.3 * i})
     assert lp.achart.isVisibleTo(lp) and "Urinish 3" in lp.step_lbl.text() and "2.30" in lp.step_lbl.text()
     (tmp_path / "st").mkdir(exist_ok=True)
-    (tmp_path / "st" / "attempts.json").write_text(json.dumps({"genetic|XAUUSD|M15|2022-01-03 00:00:00|0.30000|0.05000": 4}))
+    (tmp_path / "st" / "attempts.json").write_text(json.dumps({"genetic|XAUUSD|M15|2022-01-03 00:00:00|2026-W42": 4}))
     lp._budget_changed()
     assert lp.attempts_done() == 4 and "4 urinish" in lp.done_lbl.text()
     w.close()

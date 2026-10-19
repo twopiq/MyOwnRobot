@@ -56,7 +56,10 @@ def build_history(cfg: sc.Cfg, br: Optional[sc.Broker] = None) -> pd.DataFrame:
                 sc.log("MT5 tarixi: %d sham, %s .. %s" % (len(recent), recent.index[0], recent.index[-1]))
         except Exception as e:  # noqa: BLE001
             sc.log("MT5 tarixini olib bo'lmadi: %s" % e)
-    parts = [x for x in (base, recent) if x is not None and len(x)]
+    stored = load_bar_store(cfg)
+    if stored is not None and len(stored):
+        sc.log("saqlangan jonli shamlar: %d, %s .. %s" % (len(stored), stored.index[0], stored.index[-1]))
+    parts = [x for x in (base, stored, recent) if x is not None and len(x)]
     if not parts:
         raise RuntimeError("tarix yo'q: SL_HISTORY faylini bering yoki MT5 ulanishini tekshiring")
     df = pd.concat(parts)
@@ -64,11 +67,73 @@ def build_history(cfg: sc.Cfg, br: Optional[sc.Broker] = None) -> pd.DataFrame:
     return sc.limit_years(df, cfg.history_years)
 
 
+# ================================================================ jonli ma'lumot ombori
+
+def bar_store_path(cfg: sc.Cfg) -> Path:
+    safe = "".join(ch if ch.isalnum() else "_" for ch in cfg.symbol)
+    return sc.state_path(cfg, "bars_%s_%s.csv" % (safe, cfg.tf))
+
+
+def load_bar_store(cfg: sc.Cfg) -> Optional[pd.DataFrame]:
+    """Jonli rejimda yig'ilgan yopilgan shamlar (UTC). Robot qayta ishga tushsa ham saqlanadi va o'sib boradi."""
+    p = bar_store_path(cfg)
+    if not p.exists():
+        return None
+    try:
+        return sc.read_history_file(str(p))
+    except Exception as e:  # noqa: BLE001
+        sc.log("shamlar ombori o'qilmadi: %s" % e)
+        return None
+
+
+def store_bars(cfg: sc.Cfg, df: pd.DataFrame, last: Optional[pd.Timestamp]) -> Optional[pd.Timestamp]:
+    """Ombordagi oxirgi shamdan yangilarini qo'shadi; yangi oxirgi vaqtni qaytaradi."""
+    if df is None or not len(df):
+        return last
+    new = df if last is None else df[df.index > last]
+    if not len(new):
+        return last
+    p = bar_store_path(cfg)
+    head = not p.exists()
+    try:
+        new[["open", "high", "low", "close", "volume"]].to_csv(p, mode="a", header=head, index_label="time")
+    except OSError as e:
+        sc.log("shamlar saqlanmadi: %s" % e)
+        return last
+    return new.index[-1]
+
+
+def sync_bar_store(cfg: sc.Cfg, br: sc.Broker) -> Optional[pd.Timestamp]:
+    """Ishga tushganda: MT5 dagi barcha mavjud shamlarni omborga qo'shib qo'yadi (bo'shliq qolmasligi uchun)."""
+    old = load_bar_store(cfg)
+    last = old.index[-1] if old is not None and len(old) else None
+    try:
+        last = store_bars(cfg, br.closed_bars(60000), last)
+    except Exception as e:  # noqa: BLE001
+        sc.log("MT5 shamlari omborga yozilmadi: %s" % e)
+    return last
+
+
+def log_live_trade(cfg: sc.Cfg, row: Dict[str, Any]) -> None:
+    p = sc.state_path(cfg, "live_trades.csv")
+    head = not p.exists()
+    try:
+        with open(p, "a", encoding="utf-8") as f:
+            if head:
+                f.write(",".join(row) + "\n")
+            f.write(",".join(str(v) for v in row.values()) + "\n")
+    except OSError:
+        pass
+
+
 def _data_key(cfg: sc.Cfg, hist: pd.DataFrame) -> str:
-    """Urinishlar hisobi kaliti: rejim, instrument, TF, xarajatlar va tarix boshi. Tarix oxiri kalitga kirmaydi —
-    yangi shamlar qo'shilganda ham hisob davom etadi (bir xil ma'lumot qayta-qayta "sinab ko'rilmoqda")."""
+    """Urinishlar hisobi kaliti: rejim, instrument, TF, tarix boshi va oxirgi shamning haftasi.
+    Bir xil ma'lumotda hisob davom etadi (qayta-qayta sinash — darvoza qattiqlashadi); jonli rejimda yangi hafta
+    ma'lumoti kelganda holdout yangilanadi va hisob qaytadan boshlanadi. Xarajatlar (spred) kalitga kirmaydi:
+    spredni o'zgartirib qayta sinash ham "yana bir urinish" hisoblanadi."""
     first = str(hist.index[0]) if len(hist) else ""
-    return "%s|%s|%s|%s|%.5f|%.5f" % (cfg.mode, cfg.symbol, cfg.tf, first, cfg.spread, cfg.slippage)
+    week = "%d-W%02d" % tuple(hist.index[-1].isocalendar()[:2]) if len(hist) else ""
+    return "%s|%s|%s|%s|%s" % (cfg.mode, cfg.symbol, cfg.tf, first, week)
 
 
 def attempts_done(cfg: sc.Cfg, hist: pd.DataFrame) -> int:
@@ -190,6 +255,10 @@ class LiveState:
         self.last_learn = 0.0
         self.paused = False
         self.seen_deals: List[int] = []
+        self.spreads: List[float] = []                       # har yangi shamda kuzatilgan spred
+        self.champ: Dict[str, Any] = {}                      # joriy (tekshirilgan) strategiya: holdout t, vaqt, urinish
+        self.cycles = 0                                      # jonli o'rganish sikllari soni
+        self.last_result: Dict[str, Any] = {}
 
     def path(self) -> Path:
         return sc.state_path(self.cfg, "live_state.json")
@@ -200,13 +269,17 @@ class LiveState:
             self.positions, self.rs = d.get("positions", {}), d.get("rs", [])
             self.last_learn, self.paused = float(d.get("last_learn", 0)), bool(d.get("paused", False))
             self.seen_deals = d.get("seen_deals", [])
+            self.spreads, self.champ = d.get("spreads", []), d.get("champ", {})
+            self.cycles, self.last_result = int(d.get("cycles", 0)), d.get("last_result", {})
         except Exception:  # noqa: BLE001
             pass
 
     def save(self) -> None:
         try:
             self.path().write_text(json.dumps({"positions": self.positions, "rs": self.rs[-200:], "last_learn": self.last_learn,
-                                               "paused": self.paused, "seen_deals": self.seen_deals[-400:]}), encoding="utf-8")
+                                               "paused": self.paused, "seen_deals": self.seen_deals[-400:],
+                                               "spreads": self.spreads[-3000:], "champ": self.champ, "cycles": self.cycles,
+                                               "last_result": self.last_result}), encoding="utf-8")
         except OSError:
             pass
 
@@ -218,21 +291,25 @@ class Learner:
         self.cfg = cfg
         self.thread: Optional[threading.Thread] = None
         self.result: Optional[tuple] = None
+        self.finished_at = 0.0
 
     @property
     def busy(self) -> bool:
         return self.thread is not None and self.thread.is_alive()
 
-    def start(self, hist: pd.DataFrame) -> None:
+    def start(self, hist: pd.DataFrame, cfg: Optional[sc.Cfg] = None) -> None:
+        c = cfg or self.cfg
+
         def work() -> None:
             try:
-                sc.log("O'RGANISH boshlandi [%s]: %d sham" % (self.cfg.mode, len(hist)))
-                cand, rep = learn_repeat(self.cfg, hist, forever=False)   # mavjud strategiya yangisi o'tmasa qoladi
-                sc.save_report(self.cfg, rep, hist)
+                sc.log("O'RGANISH boshlandi [%s]: %d sham, spred %.2f, t ≥ %.2f dan" % (c.mode, len(hist), c.spread, c.min_t))
+                cand, rep = learn_repeat(c, hist, forever=False)   # mavjud strategiya yangisi o'tmasa qoladi
+                sc.save_report(c, rep, hist)
                 self.result = (cand, rep)
             except Exception as e:  # noqa: BLE001
                 sc.log("O'RGANISH xatosi: %s\n%s" % (e, traceback.format_exc()))
                 self.result = (None, None)
+            self.finished_at = time.time()
 
         self.result = None
         self.thread = threading.Thread(target=work, daemon=True)
@@ -247,10 +324,34 @@ class Learner:
 
 # ================================================================ jonli sikl
 
+def live_learn_cfg(cfg: sc.Cfg, st: LiveState) -> sc.Cfg:
+    """Jonli o'rganish sozlamasi: (1) xarajat — jonli kuzatilgan spred (median) sozlamadagidan katta bo'lsa o'shani oladi;
+    (2) chempion: tekshirilgan strategiya yangi bo'lsa (SL_RELEARN_HOURS dan yosh), raqib uning holdout t sidan
+    yuqori natija ko'rsatishi shart — aks holda joriy strategiya almashtirilmaydi va saqlanmaydi."""
+    import statistics
+    c = cfg
+    if len(st.spreads) >= 100:
+        obs = float(statistics.median(st.spreads[-2000:]))
+        if obs > c.spread:
+            c = dataclasses.replace(c, spread=round(obs, 5))
+    ch = st.champ
+    if ch and ch.get("t") is not None and time.time() - float(ch.get("time", 0)) < cfg.relearn_hours * 3600:
+        c = dataclasses.replace(c, min_t=max(c.min_t, float(ch["t"])))
+    return c
+
+
+def start_learning(cfg: sc.Cfg, br: sc.Broker, st: LiveState, learner: Learner) -> None:
+    learner.start(build_history(cfg, br), live_learn_cfg(cfg, st))
+    st.last_learn = time.time()
+    st.cycles += 1
+    st.save()
+
+
 def run_live(cfg: sc.Cfg) -> None:
     import MetaTrader5 as mt5  # noqa: WPS433
     br = sc.Broker(cfg, mt5)
     br.connect()
+    stored_to = sync_bar_store(cfg, br)
     eng = load_engine(cfg)
     have = eng.load()
     st = LiveState(cfg)
@@ -260,11 +361,9 @@ def run_live(cfg: sc.Cfg) -> None:
     sc.telegram("🧠 <b>Self-learning robot ishga tushdi</b>\nRejim: %s · %s %s · risk %.2f%%" % (cfg.mode, cfg.symbol, cfg.tf, cfg.risk_pct))
     if have:
         sc.log("joriy strategiya:\n" + eng.describe())
-    due = (not have) or (time.time() - st.last_learn > cfg.relearn_hours * 3600)
+    due = (not have) or cfg.live_continuous or (time.time() - st.last_learn > cfg.relearn_hours * 3600)
     if due:
-        learner.start(build_history(cfg, br))
-        st.last_learn = time.time()
-        st.save()
+        start_learning(cfg, br, st, learner)
     last_bar = 0
     day_key, day_eq = "", 0.0
     stop_flag = sc.state_path(cfg, "stop.flag")
@@ -286,18 +385,36 @@ def run_live(cfg: sc.Cfg) -> None:
                 if rep is not None:
                     sc.append_learn_log(cfg, rep)
                     sc.log("O'RGANISH tugadi:\n" + format_report(rep))
-                    tg_report(cfg, rep)
-                    if cand is not None and cand.ready():
+                    te = rep.segments.get("test") or {}
+                    st.last_result = {"time": time.time(), "ok": bool(rep.ok), "deployed": bool(rep.deployed),
+                                      "t": te.get("t"), "exp": te.get("exp"), "n": te.get("n"),
+                                      "attempt": rep.extra.get("attempt_no"), "need_t": rep.extra.get("min_t")}
+                    if rep.deployed or rep.ok:
+                        tg_report(cfg, rep)
+                    if cand is not None and cand.ready() and (rep.deployed or not eng.ready()):
                         eng = cand
                         if rep.deployed:
                             st.paused = False
+                            if rep.ok:
+                                st.champ = {"t": te.get("t"), "exp": te.get("exp"), "time": time.time(),
+                                            "attempt": rep.extra.get("attempt_no"), "strategy": rep.strategy}
+                                sc.log("YANGI STRATEGIYA joriy qilindi (holdout t=%.2f)" % (te.get("t") or 0))
                     st.save()
+            # uzluksiz jonli o'rganish: sikl tugagach pauza va yangi ma'lumot bilan keyingisi
+            if cfg.live_continuous and not learner.busy and learner.result is None \
+                    and time.time() - learner.finished_at >= cfg.learn_pause_sec:
+                start_learning(cfg, br, st, learner)
             rates = mt5.copy_rates_from_pos(cfg.symbol, br._tf, 0, 1)
             cur = int(rates[-1]["time"]) if rates is not None and len(rates) else 0
             if cur and cur != last_bar:
                 first = last_bar == 0
                 last_bar = cur
                 day_key, day_eq = _day_state(br, day_key, day_eq)
+                stored_to = store_bars(cfg, br.closed_bars(5), stored_to)
+                try:
+                    st.spreads = (st.spreads + [round(br.spread_px(), 5)])[-3000:]
+                except Exception:  # noqa: BLE001
+                    pass
                 if not first:                       # ishga tushgan zahoti yarim sham bilan savdo qilmaymiz
                     on_new_bar(cfg, br, eng, st, learner, day_eq)
             time.sleep(2)
@@ -330,9 +447,29 @@ def write_status(cfg: sc.Cfg, br: sc.Broker, eng: Any, st: LiveState, learner: L
             "strategy": eng.describe() if eng.ready() else "", "paused": st.paused, "rs": st.rs[-60:],
             "kill_window": cfg.kill_window, "kill_sum_r": cfg.kill_sum_r, "risk_pct": cfg.risk_pct,
             "max_daily_loss_pct": cfg.max_daily_loss_pct, "require_pass": cfg.require_pass,
-            "last_learn": st.last_learn, "next_learn": st.last_learn + cfg.relearn_hours * 3600})
+            "last_learn": st.last_learn, "next_learn": (learner.finished_at + cfg.learn_pause_sec) if cfg.live_continuous
+            else st.last_learn + cfg.relearn_hours * 3600,
+            "continuous": cfg.live_continuous, "cycles": st.cycles, "last_result": st.last_result, "champ": st.champ,
+            "spread_obs": (sorted(st.spreads[-2000:])[len(st.spreads[-2000:]) // 2] if len(st.spreads) >= 20 else None),
+            "spread_cfg": cfg.spread, "bars_stored": _count_lines(bar_store_path(cfg))})
     except Exception as e:  # noqa: BLE001
         sc.log("holat fayli yozilmadi: %s" % e)
+
+
+_LINES: Dict[str, tuple] = {}
+
+
+def _count_lines(p: Path) -> int:
+    """Ombordagi shamlar soni (fayl o'zgarmasa keshdan)."""
+    try:
+        m = p.stat().st_mtime
+    except OSError:
+        return 0
+    k = str(p)
+    if k not in _LINES or _LINES[k][0] != m:
+        with open(p, "rb") as f:
+            _LINES[k] = (m, max(0, sum(1 for _ in f) - 1))
+    return _LINES[k][1]
 
 
 def _day_state(br: sc.Broker, key: str, eq0: float):
@@ -352,8 +489,13 @@ def sync_closed(cfg: sc.Cfg, br: sc.Broker, st: LiveState) -> None:
             continue
         st.seen_deals.append(int(d.ticket))
         info = st.positions.pop(str(int(d.position_id)), None)
-        if info and info.get("risk", 0) > 0:
-            st.rs.append(round((float(d.profit) + float(getattr(d, "commission", 0)) + float(getattr(d, "swap", 0))) / info["risk"], 3))
+        pnl = float(d.profit) + float(getattr(d, "commission", 0)) + float(getattr(d, "swap", 0))
+        r = round(pnl / info["risk"], 3) if info and info.get("risk", 0) > 0 else None
+        if r is not None:
+            st.rs.append(r)
+        log_live_trade(cfg, {"close_time": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()), "position": int(d.position_id),
+                             "mode": cfg.mode, "profit": round(pnl, 2), "R": "" if r is None else r,
+                             "strategy_t": (st.champ or {}).get("t", "")})
 
 
 def on_new_bar(cfg: sc.Cfg, br: sc.Broker, eng: Any, st: LiveState, learner: Learner, day_eq: float) -> None:
@@ -379,13 +521,12 @@ def on_new_bar(cfg: sc.Cfg, br: sc.Broker, eng: Any, st: LiveState, learner: Lea
         sc.telegram("🛑 <b>Self-learning</b>: " + msg)
         st.rs = []
         if not learner.busy:
-            learner.start(build_history(cfg, br))
-            st.last_learn = time.time()
+            start_learning(cfg, br, st, learner)
     # 3) rejalashtirilgan qayta o'rganish; tekshirilgan strategiya yo'q bo'lsa — kutmasdan, uzluksiz qayta o'rganish
     need = (not eng.ready()) or (cfg.require_pass and not eng.validated) or st.paused
-    if not learner.busy and (time.time() - st.last_learn > cfg.relearn_hours * 3600 or (cfg.until_pass and need)):
-        learner.start(build_history(cfg, br))
-        st.last_learn = time.time()
+    if not learner.busy and not cfg.live_continuous and (
+            time.time() - st.last_learn > cfg.relearn_hours * 3600 or (cfg.until_pass and need)):
+        start_learning(cfg, br, st, learner)
     st.save()
     # 4) kirish
     if learner.busy and not eng.ready():

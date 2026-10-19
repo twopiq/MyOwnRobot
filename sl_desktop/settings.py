@@ -83,6 +83,12 @@ FIELDS: List[Field] = [
           "variant bilan o'rganadi"),
     Field("SL_LEARN_UNTIL_PASS", "Jonli: o'tguncha qayta o'rganish", "learn", "bool", True,
           "Jonli rejimda tekshirilgan strategiya bo'lmasa haftani kutmasdan darhol qayta o'rganadi"),
+    Field("SL_LIVE_CONTINUOUS", "Jonli: to'xtamasdan o'rganish", "learn", "bool", True,
+          "Jonli savdo paytida o'rganish to'xtamaydi: har sikldan keyin pauza va yangi saqlangan ma'lumot bilan keyingisi. "
+          "Yangi model faqat joriy strategiyadan yaxshi bo'lsa almashtiriladi"),
+    Field("SL_LEARN_PAUSE_SEC", "Sikllar orasidagi pauza", "learn", "int", 300,
+          "Jonli uzluksiz o'rganishda ikki sikl orasidagi dam (MT5 va savdoga protsessor qoldirish uchun)",
+          lo=0, hi=86400, step=30, suffix=" s"),
     Field("SL_SEED", "Seed", "learn", "int", 7, "Tasodifiy sonlar boshlang'ich qiymati", lo=0, hi=10 ** 6),
     Field("SL_CONFIRM", "Tasdiqlovchi instrumentlar", "learn", "str", "",
           "Boshqa tarix fayllari: 'fayl|spred|sirpanish;fayl2|spred2' — strategiya ularda ham foydali bo'lishi kerak"),

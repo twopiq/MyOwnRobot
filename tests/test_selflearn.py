@@ -518,3 +518,35 @@ def test_ml_attempts_try_different_configs():
     variants = {sl_ml.attempt_config(sc.Cfg(seed=7 + k, attempt=k), 1.5, 1.5, 32)[:3] for k in range(1, 12)}
     assert len(variants) >= 5
     assert sl_ml.attempt_config(sc.Cfg(seed=9, attempt=2), 1.5, 1.5, 32) == sl_ml.attempt_config(sc.Cfg(seed=9, attempt=2), 1.5, 1.5, 32)
+
+
+def test_bar_store_appends_only_new_bars_and_feeds_history(tmp_path):
+    import selflearn_robot as sr
+    cfg = sc.Cfg(state_dir=str(tmp_path))
+    h = synth(2000)
+    last = sr.store_bars(cfg, h.iloc[:1500], None)
+    last = sr.store_bars(cfg, h.iloc[1400:1800], last)          # kesishgan qism qayta yozilmaydi
+    stored = sr.load_bar_store(cfg)
+    assert len(stored) == 1800 and last == h.index[1799] and not stored.index.duplicated().any()
+    assert sr.build_history(cfg, None).index[-1] == h.index[1799]  # SL_HISTORY bo'lmasa ham ombordan o'rganadi
+
+
+def test_live_learn_cfg_uses_observed_spread_and_champion():
+    import time as _t
+    import selflearn_robot as sr
+    cfg = sc.Cfg(spread=0.30, min_t=1.0, relearn_hours=168)
+    st = sr.LiveState(cfg)
+    assert sr.live_learn_cfg(cfg, st).spread == 0.30
+    st.spreads = [0.45] * 150                                   # jonli spred kengroq — o'rganish shuni hisobga oladi
+    st.champ = {"t": 2.4, "time": _t.time()}                     # yangi chempion — raqib undan yaxshi bo'lishi kerak
+    c = sr.live_learn_cfg(cfg, st)
+    assert c.spread == 0.45 and c.min_t == 2.4
+    st.champ["time"] = _t.time() - 200 * 3600                    # eskirgan chempion — oddiy chegara
+    assert sr.live_learn_cfg(cfg, st).min_t == 1.0
+
+
+def test_attempt_key_ignores_costs():
+    import selflearn_robot as sr
+    h = synth(500)
+    assert sr._data_key(sc.Cfg(spread=0.3), h) == sr._data_key(sc.Cfg(spread=0.5), h)
+    assert sr._data_key(sc.Cfg(mode="ml"), h) != sr._data_key(sc.Cfg(mode="genetic"), h)

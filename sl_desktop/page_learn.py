@@ -229,12 +229,11 @@ class LearnPage(W.Page):
                               if done else "Bu tarixda hali urinish bo'lmagan.")
 
     def attempts_done(self) -> int:
-        """state/attempts.json dan shu rejim/simvol/TF/xarajatlar uchun eng katta hisob (robot kalitiga mos)."""
+        """state/attempts.json dan shu rejim/simvol/TF uchun eng katta hisob (robot kaliti: rejim|simvol|TF|boshi|hafta)."""
         d = D.read_json(self.app.settings.state_dir() / "attempts.json") or {}
         s = self.app.settings
         pre = "%s|%s|%s|" % (self.mode(), s.get("SL_SYMBOL"), s.get("SL_TF"))
-        suf = "|%.5f|%.5f" % (float(s.get("SL_SPREAD")), float(s.get("SL_SLIPPAGE")))
-        return max([int(v) for k, v in d.items() if k.startswith(pre) and k.endswith(suf)] or [0])
+        return max([int(v) for k, v in d.items() if k.startswith(pre)] or [0])
 
     def _toggle_log(self, on=None) -> None:
         on = not self.log.isVisible() if on is None else on
