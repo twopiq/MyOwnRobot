@@ -106,6 +106,20 @@ Ilova robot kodini o'zgartirmaydi: robot alohida jarayonda ishlaydi, ilova uning
 `live_status.json` (jonli holat, har 3 s), `learn_log.jsonl`. To'xtatish tugmasi `state/stop.flag` yozadi — robot holatni
 saqlab chiqadi. Sozlamalar `desktop_settings.json` da.
 
+### Yangilanish tizimi
+O'rnatilgan dastur o'zi yangilanadi (Sozlamalar → Yangilanish; manba — GitHub Releases yoki tarmoq papkasi, yopiq repo uchun
+faqat o'qish huquqli token):
+* ilova ochilganda va har 6 soatda fonda `update.json` tekshiriladi;
+* **kod yangilanishi** (kichik zip, ilova + robot kodi) so'ramasdan yuklanadi va SHA-256 bilan tekshiriladi — menyuda
+  "Qayta ochish" chiqadi; qayta ochilmasa ham keyingi ishga tushishda kuchga kiradi;
+* `requirements.txt`, `build.spec` yoki `desktop_app.py` o'zgargan bo'lsa (`libs` belgisi) — **to'liq paket** so'raladi;
+  dastur yopilgach PowerShell skript papkani almashtirib, qayta ochadi;
+* yangi kod ishga tushmasa u `BROKEN` deb belgilanadi va oldingi versiya ishlatiladi; yangilangandan keyin "Nima yangi" oynasi.
+
+Reliz: `sl_desktop/__init__.py` dagi `__version__` ni oshiring va commit xabariga `[release]` yozing (yoki `v*` teg qo'ying) —
+CI `.exe`, `update.json` va `myownrobot_app-<versiya>.zip` ni GitHub Release'ga joylaydi. Qo'lda:
+`python tools/release.py publish OUTDIR --full MyOwnRobot_Windows.zip`.
+
 ## Testlar
 `python -m pytest tests -q` (simulyator qo'lda yozilgan etalon bilan mos, lookahead yo'qligi, yashirin qonuniyatni genetik topishi,
 soxta MT5 bilan lot/buyurtma, dvigatellar mustaqilligi).

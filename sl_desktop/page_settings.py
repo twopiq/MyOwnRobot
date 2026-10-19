@@ -29,6 +29,9 @@ class SettingsPage(W.Page):
         save.clicked.connect(self.save)
         self.head_right.addWidget(save)
 
+        from .update_ui import UpdateCard
+        self.update_card = UpdateCard(app)
+        self.lay.addWidget(self.update_card)
         self.editors: Dict[str, QWidget] = {}
         for gk, gname, gdesc in GROUPS:
             card = W.Card(gname, gdesc)
