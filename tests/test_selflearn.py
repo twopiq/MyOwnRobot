@@ -456,10 +456,10 @@ def test_learn_repeat_uses_new_seeds_and_stops_on_first_pass(tmp_path, hist, mon
             return sc.Report(mode="genetic", ok=len(calls) == 3)
 
     monkeypatch.setattr(sr, "load_engine", lambda c: Dummy(c))
-    eng, rep = sr.learn_repeat(sc.Cfg(seed=7, repeat=5), hist)
+    eng, rep = sr.learn_repeat(sc.Cfg(seed=7, repeat=5, state_dir=str(tmp_path / "a")), hist)
     assert calls == [(7, 5), (8, 5), (9, 5)] and rep.ok and rep.extra["attempt"] == "3/5"
     calls.clear()
-    eng, rep = sr.learn_repeat(sc.Cfg(seed=1, repeat=2), hist)
+    eng, rep = sr.learn_repeat(sc.Cfg(seed=1, repeat=2, state_dir=str(tmp_path / "b")), hist)
     assert len(calls) == 2 and not rep.ok
 
 
@@ -474,3 +474,79 @@ def test_broker_passes_terminal_path_and_checks_login():
     seen.clear()
     sc.Broker(sc.Cfg(), m).connect()
     assert seen == {}
+
+
+def test_attempts_persist_and_forever_loop(tmp_path, hist, monkeypatch):
+    """Har bosish yangi seed bilan davom etadi (natija takrorlanmaydi), darvoza jami urinishlar bo'yicha qattiqlashadi;
+    uzluksiz rejim o'tguncha davom etadi va stop.flag bilan to'xtaydi."""
+    import selflearn_robot as sr
+    calls = []
+    passes = set()
+
+    class Dummy:
+        def __init__(self, cfg):
+            self.cfg = cfg
+
+        def load(self):
+            return False
+
+        def learn(self, h):
+            calls.append((self.cfg.seed, self.cfg.trials, self.cfg.attempt))
+            return sc.Report(mode="genetic", ok=self.cfg.attempt in passes)
+
+    monkeypatch.setattr(sr, "load_engine", lambda c: Dummy(c))
+    cfg = sc.Cfg(seed=7, state_dir=str(tmp_path))
+    sr.learn_repeat(cfg, hist)
+    sr.learn_repeat(cfg, hist)                                  # ikkinchi bosish: yangi seed, 2 urinish hisobida
+    assert calls == [(7, 1, 0), (8, 2, 1)] and sr.attempts_done(cfg, hist) == 2
+    calls.clear()
+    passes.add(4)
+    eng, rep = sr.learn_repeat(cfg, hist, forever=True)
+    assert [c[2] for c in calls] == [2, 3, 4] and [c[1] for c in calls] == [3, 4, 5] and rep.ok
+    assert rep.extra["attempt_no"] == 5 and rep.extra["min_t"] > 1.0
+    calls.clear()
+    seen = []
+    (tmp_path / "stop.flag").write_text("1")
+    sr.learn_repeat(cfg, hist, forever=True, on_attempt=lambda e, r: seen.append(r.extra["attempt_no"]))
+    assert seen == [6] and not (tmp_path / "stop.flag").exists()
+
+
+def test_ml_attempts_try_different_configs():
+    import sl_ml
+    base = sl_ml.attempt_config(sc.Cfg(seed=7, attempt=0), 1.5, 1.5, 32)
+    assert base[:3] == (1.5, 1.5, 32) and base[3] == sl_ml.DEFAULT_HP
+    variants = {sl_ml.attempt_config(sc.Cfg(seed=7 + k, attempt=k), 1.5, 1.5, 32)[:3] for k in range(1, 12)}
+    assert len(variants) >= 5
+    assert sl_ml.attempt_config(sc.Cfg(seed=9, attempt=2), 1.5, 1.5, 32) == sl_ml.attempt_config(sc.Cfg(seed=9, attempt=2), 1.5, 1.5, 32)
+
+
+def test_bar_store_appends_only_new_bars_and_feeds_history(tmp_path):
+    import selflearn_robot as sr
+    cfg = sc.Cfg(state_dir=str(tmp_path))
+    h = synth(2000)
+    last = sr.store_bars(cfg, h.iloc[:1500], None)
+    last = sr.store_bars(cfg, h.iloc[1400:1800], last)          # kesishgan qism qayta yozilmaydi
+    stored = sr.load_bar_store(cfg)
+    assert len(stored) == 1800 and last == h.index[1799] and not stored.index.duplicated().any()
+    assert sr.build_history(cfg, None).index[-1] == h.index[1799]  # SL_HISTORY bo'lmasa ham ombordan o'rganadi
+
+
+def test_live_learn_cfg_uses_observed_spread_and_champion():
+    import time as _t
+    import selflearn_robot as sr
+    cfg = sc.Cfg(spread=0.30, min_t=1.0, relearn_hours=168)
+    st = sr.LiveState(cfg)
+    assert sr.live_learn_cfg(cfg, st).spread == 0.30
+    st.spreads = [0.45] * 150                                   # jonli spred kengroq — o'rganish shuni hisobga oladi
+    st.champ = {"t": 2.4, "time": _t.time()}                     # yangi chempion — raqib undan yaxshi bo'lishi kerak
+    c = sr.live_learn_cfg(cfg, st)
+    assert c.spread == 0.45 and c.min_t == 2.4
+    st.champ["time"] = _t.time() - 200 * 3600                    # eskirgan chempion — oddiy chegara
+    assert sr.live_learn_cfg(cfg, st).min_t == 1.0
+
+
+def test_attempt_key_ignores_costs():
+    import selflearn_robot as sr
+    h = synth(500)
+    assert sr._data_key(sc.Cfg(spread=0.3), h) == sr._data_key(sc.Cfg(spread=0.5), h)
+    assert sr._data_key(sc.Cfg(mode="ml"), h) != sr._data_key(sc.Cfg(mode="genetic"), h)

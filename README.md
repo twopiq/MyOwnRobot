@@ -23,6 +23,26 @@ Har dvigatel faqat `sl_core.py` (tarix, indikator, simulyator, MT5 qatlami) dan 
 * **Qabul darvozasi**: holdout'da kamida 40 bitim, kutilma ≥ +0.05R, PF ≥ 1.10, t ≥ 1.0, validatsiya va train foydali, holdout choraklarining ≥ 50% foydali. O'tmasa robot **savdo qilmaydi** (`SL_REQUIRE_PASS=0` faqat tadqiqot uchun).
 * Jonli himoya: oxirgi 20 bitim yig'indisi ≤ −6R bo'lsa to'xtab qayta o'rganadi; kunlik zarar limiti; keng spredda kirmaydi; risk % bo'yicha lot.
 
+## Uzluksiz o'rganish (`--forever`, ilovada «♾ Uzluksiz»)
+* Robot darvozadan o'tguncha (yoki to'xtatilguncha) qayta-qayta o'rganadi; har urinish **yangi seed va variant** bilan
+  (ML: boshqa SL/TP/ushlash muddati va XGBoost parametrlari; genetic/optimizer: boshqa qidiruv yo'li).
+* Urinishlar shu ma'lumot (rejim, simvol, TF, xarajatlar, tarix boshi) uchun `state/attempts.json` da hisoblanadi —
+  tugmani qayta bosish yoki ilovani qayta ochish hisobni davom ettiradi, natija takrorlanmaydi.
+* Darvozaning t-chegarasi jami urinishlar soniga qarab Bonferroni bo'yicha oshadi (1: 1.00, 10: 2.15, 50: 2.73) —
+  yuzlab urinishda tasodifan "o'tib ketgan" strategiya savdoga chiqmasligi uchun.
+* Urinishlar hisobi kaliti: rejim, simvol, TF, tarix boshi va oxirgi shamning haftasi (spred kalitga kirmaydi).
+
+### Jonli savdoda to'xtamaydigan o'rganish (`SL_LIVE_CONTINUOUS=1`, standart)
+* **Ma'lumot saqlanadi:** har yangi yopilgan sham `state/bars_<SIMVOL>_<TF>.csv` ga qo'shiladi (ishga tushganda MT5 dagi
+  60 000 sham ham), o'rganish fayl + ombor + MT5 ni birlashtiradi — tarix vaqt o'tishi bilan o'sadi. Yopilgan jonli
+  bitimlar `state/live_trades.csv` ga, har shamdagi haqiqiy spred `live_state.json` ga yoziladi.
+* **O'rganish to'xtamaydi:** sikl tugagach `SL_LEARN_PAUSE_SEC` (300 s) pauza va yangi ma'lumot bilan keyingisi.
+* **Chempion / raqib:** tekshirilgan strategiya `SL_RELEARN_HOURS` dan yosh bo'lsa, yangi model uning holdout t sidan yuqori
+  natija ko'rsatgandagina almashtiriladi (aks holda saqlanmaydi ham). Muddat o'tgach joriy strategiya yangi ma'lumotda
+  qaytadan sinovdan o'tishi kerak.
+* **Haqiqiy xarajat:** jonli kuzatilgan spred (median) sozlamadagidan katta bo'lsa, o'rganish shuni hisobga oladi.
+* Strategiya bo'lmasa (yoki kill-switch ishlasa) savdo qilinmaydi, o'rganish esa davom etadi. To'xtatish: `state/stop.flag`.
+
 ## Qayta-qayta o'rganish va tasdiqlash (`--repeat`, `--confirm`)
 * `--repeat N` (yoki `SL_REPEAT=N`): robot yangi `seed` bilan N marta qayta o'rganadi, birinchi o'tgan urinishda to'xtaydi.
   Urinish ko'p bo'lsa tasodifan "o'tib ketish" ehtimoli oshadi, shuning uchun holdout `t` chegarasi **Bonferroni bo'yicha qattiqlashadi**
@@ -116,8 +136,8 @@ faqat o'qish huquqli token):
   dastur yopilgach PowerShell skript papkani almashtirib, qayta ochadi;
 * yangi kod ishga tushmasa u `BROKEN` deb belgilanadi va oldingi versiya ishlatiladi; yangilangandan keyin "Nima yangi" oynasi.
 
-Reliz: `sl_desktop/__init__.py` dagi `__version__` ni oshiring va commit xabariga `[release]` yozing (yoki `v*` teg qo'ying) —
-CI `.exe`, `update.json` va `myownrobot_app-<versiya>.zip` ni GitHub Release'ga joylaydi. Qo'lda:
+Reliz: `sl_desktop/__init__.py` dagi `__version__` ni oshiring va `main` ga birlashtiring — `v<versiya>` tegi hali bo'lmasa CI
+`.exe`, `update.json` va `myownrobot_app-<versiya>.zip` ni GitHub Release'ga avtomatik joylaydi (`[release]` yoki `v*` teg ham ishlaydi). Qo'lda:
 `python tools/release.py publish OUTDIR --full MyOwnRobot_Windows.zip`.
 
 ## Testlar

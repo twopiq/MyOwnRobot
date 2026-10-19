@@ -62,17 +62,39 @@ def build_features(b: sc.Bars, idx: pd.DatetimeIndex) -> Tuple[np.ndarray, List[
     return X, names, a14
 
 
-def _new_model(seed: int):
+DEFAULT_HP = {"max_depth": 3, "learning_rate": 0.03, "min_child_weight": 80}
+# urinishlar bo'yicha qidiriladigan variantlar (1-urinish — standart qiymatlar)
+SL_GRID = [1.0, 1.5, 2.0, 2.5]
+RR_GRID = [1.0, 1.5, 2.0, 3.0]
+HOLD_GRID = [16, 32, 48, 96]
+HP_GRID = {"max_depth": [2, 3, 4], "learning_rate": [0.02, 0.03, 0.05], "min_child_weight": [40, 80, 160]}
+
+
+def attempt_config(cfg: sc.Cfg, sl: float, rr: float, hold: int) -> Tuple[float, float, int, Dict[str, Any]]:
+    """1-urinish: berilgan (env) qiymatlar; keyingilari: seed bo'yicha yangi SL/RR/ushlash va model parametrlari.
+    Shu tufayli qayta o'rganish har safar boshqa variantni sinaydi (bir xil natija takrorlanmaydi)."""
+    if cfg.attempt <= 0:
+        return sl, rr, hold, dict(DEFAULT_HP)
+    r = np.random.default_rng(cfg.seed)
+    hp = {k: v[int(r.integers(len(v)))] for k, v in HP_GRID.items()}
+    return (float(SL_GRID[int(r.integers(len(SL_GRID)))]), float(RR_GRID[int(r.integers(len(RR_GRID)))]),
+            int(HOLD_GRID[int(r.integers(len(HOLD_GRID)))]), hp)
+
+
+def _new_model(seed: int, hp: Optional[Dict[str, Any]] = None):
+    hp = {**DEFAULT_HP, **(hp or {})}
     try:
         import xgboost as xgb
-        return xgb.XGBClassifier(n_estimators=250, max_depth=3, learning_rate=0.03, subsample=0.7, colsample_bytree=0.7,
-                                 min_child_weight=80, reg_lambda=10.0, n_jobs=2, tree_method="hist", random_state=seed,
+        return xgb.XGBClassifier(n_estimators=250, max_depth=hp["max_depth"], learning_rate=hp["learning_rate"],
+                                 subsample=0.7, colsample_bytree=0.7, min_child_weight=hp["min_child_weight"],
+                                 reg_lambda=10.0, n_jobs=2, tree_method="hist", random_state=seed,
                                  eval_metric="logloss", verbosity=0), "xgboost"
     except Exception:  # noqa: BLE001
         pass
     try:
         from sklearn.ensemble import HistGradientBoostingClassifier
-        return HistGradientBoostingClassifier(max_depth=3, learning_rate=0.05, max_iter=200, min_samples_leaf=200,
+        return HistGradientBoostingClassifier(max_depth=hp["max_depth"], learning_rate=hp["learning_rate"] * 1.6,
+                                              max_iter=200, min_samples_leaf=hp["min_child_weight"] * 2.5,
                                               l2_regularization=10.0, random_state=seed), "sklearn"
     except Exception as e:  # noqa: BLE001
         raise RuntimeError("ML rejimi uchun xgboost yoki scikit-learn kerak (setup_bot_env.bat ni ishga tushiring): %s" % e)
@@ -148,17 +170,19 @@ class Engine:
         n = len(b)
         X, names, a14 = build_features(b, hist.index)
         rep = sc.Report(mode=NAME)
+        sl_m, rr_m, hold_m, hp = attempt_config(cfg, self.sl, self.rr, self.hold)
+        rep.extra["params"] = {"sl": sl_m, "rr": rr_m, "hold": hold_m, **hp}
         # --- yorliqlar: har sham uchun BUY va SELL natijasi (kesishuvchi bitimlarga ruxsat — bu faqat yorliq)
-        allidx = np.arange(sc.WARMUP, n - self.hold - 3)
+        allidx = np.arange(sc.WARMUP, n - hold_m - 3)
         y = {}
         for d, key in ((1, "long"), (-1, "short")):
-            tr = sc.simulate(b, allidx, d, self.sl * a14[allidx], self.sl * self.rr * a14[allidx], self.hold,
+            tr = sc.simulate(b, allidx, d, sl_m * a14[allidx], sl_m * rr_m * a14[allidx], hold_m,
                              cfg.spread, cfg.slippage, no_overlap=False)
             lab = np.full(n, -1, dtype=np.int8)
             lab[tr.entry_i - 1] = (tr.R > 0).astype(np.int8)
             y[key] = lab
         seg = sc.split_ranges(n)
-        emb = self.hold + 2
+        emb = hold_m + 2
 
         def rows(lo: int, hi: int) -> np.ndarray:
             r = np.arange(max(lo, sc.WARMUP), hi - emb)
@@ -173,7 +197,7 @@ class Engine:
         def fit(rr_: np.ndarray) -> Tuple[Dict[str, Any], str]:
             ms, kind = {}, ""
             for key in ("long", "short"):
-                m, kind = _new_model(cfg.seed)
+                m, kind = _new_model(cfg.seed, hp)
                 m.fit(X[rr_], y[key][rr_])
                 ms[key] = m
             return ms, kind
@@ -188,7 +212,7 @@ class Engine:
             d = np.where(pl >= ps, 1, -1)
             m = p >= thr
             ix = r[m]
-            return sc.simulate(b, ix, d[m], self.sl * a14[ix], self.sl * self.rr * a14[ix], self.hold, cfg.spread,
+            return sc.simulate(b, ix, d[m], sl_m * a14[ix], sl_m * rr_m * a14[ix], hold_m, cfg.spread,
                                cfg.slippage, lo=lo, hi=hi)
 
         # --- chegara: validatsiyada
@@ -229,7 +253,7 @@ class Engine:
                 p = np.maximum(pl, ps)
                 dd = np.where(pl >= ps, 1, -1)
                 ix = np.nonzero(p >= best_thr)[0]
-                return sc.simulate(bd, ix, dd[ix], self.sl * ad[ix], self.sl * self.rr * ad[ix], self.hold, sp_, sj_)
+                return sc.simulate(bd, ix, dd[ix], sl_m * ad[ix], sl_m * rr_m * ad[ix], hold_m, sp_, sj_)
             ok2, why2, info = conf(_ev)
             ok, why = ok and ok2, why + why2
             rep.extra["confirm"] = info
@@ -239,9 +263,10 @@ class Engine:
             all_r = rows(0, n)
             ms, kind = fit(all_r)                 # barcha tarixda qayta o'rgatish (giperparametr va chegara o'zgarmaydi)
             self.models, self.thr, self.feat_names, self.kind, self.validated = ms, best_thr, names, kind, ok
+            self.sl, self.rr, self.hold = sl_m, rr_m, hold_m
             self.save()
             rep.deployed = True
-        rep.strategy = "%s: ehtimol ≥ %.2f | SL %.2f×ATR, TP %.2f×ATR, %d sham" % (kind, best_thr, self.sl, self.sl * self.rr, self.hold)
+        rep.strategy = "%s: ehtimol ≥ %.2f | SL %.2f×ATR, TP %.2f×ATR, %d sham" % (kind, best_thr, sl_m, sl_m * rr_m, hold_m)
         rep.seconds = time.time() - t0
         rep.summary = "model: %s, chegara %.2f" % (kind, best_thr)
         return rep

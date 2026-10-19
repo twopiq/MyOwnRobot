@@ -155,12 +155,13 @@ class MainWindow(QMainWindow):
         return "Signal kutmoqda", "good"
 
     # ------------------------------------------------------------ hodisalar
-    def on_learned(self, mode: str) -> None:
+    def on_learned(self, mode: str, switch: bool = True) -> None:
         self.pages["results"].select_mode(mode)
         self.pages["journal"].chart._key = None
         self.pages["dashboard"].eq._key = None
         self.toast("O'rganish tugadi — natijalar tayyor")
-        self.go("results")
+        if switch:
+            self.go("results")
 
     def toast(self, msg: str) -> None:
         self.statusBar().showMessage(msg, 6000)

@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (QButtonGroup, QCheckBox, QFileDialog, QHBoxLayout
 
 from . import data as D
 from . import widgets as W
-from .charts import PriceSplitChart, ProgressChart
+from .charts import AttemptsChart, PriceSplitChart, ProgressChart
 from .settings import MODES, app_dir
 
 
@@ -85,6 +85,8 @@ class LearnPage(W.Page):
         col2.addWidget(self.repeat)
         self.t_lbl = W.label("", "muted", wrap=True)
         col2.addWidget(self.t_lbl)
+        self.done_lbl = W.label("", "muted", wrap=True)
+        col2.addWidget(self.done_lbl)
         g.addLayout(col2, 1)
         col3 = QVBoxLayout()
         col3.addWidget(W.label("Tasdiqlovchi instrumentlar (ixtiyoriy)", "text2"))
@@ -95,6 +97,12 @@ class LearnPage(W.Page):
         col3.addWidget(self.confirm)
         self.force = QCheckBox("Darvozadan o'tmasa ham saqlash (faqat tadqiqot)")
         col3.addWidget(self.force)
+        self.forever = QCheckBox("♾  Uzluksiz: darvozadan o'tguncha qayta-qayta o'rganish")
+        self.forever.setToolTip("Har urinish yangi seed va variant bilan (ML'da — boshqa SL/TP/ushlash va model parametrlari). "
+                                "To'xtatish tugmasi bilan istalgan payt to'xtatiladi.")
+        self.forever.setChecked(bool(s.get("SL_FOREVER")))
+        self.forever.toggled.connect(self._budget_changed)
+        col3.addWidget(self.forever)
         g.addLayout(col3, 2)
         c3.body.addLayout(g)
         self.lay.addWidget(c3)
@@ -108,7 +116,7 @@ class LearnPage(W.Page):
         self.start_btn.clicked.connect(self.start)
         self.stop_btn = QPushButton("■  To'xtatish")
         self.stop_btn.setMinimumHeight(40)
-        self.stop_btn.clicked.connect(lambda: app.learn.stop())
+        self.stop_btn.clicked.connect(self.stop)
         self.stop_btn.setEnabled(False)
         top.addWidget(self.start_btn)
         top.addWidget(self.stop_btn)
@@ -131,6 +139,10 @@ class LearnPage(W.Page):
         c4.body.addWidget(self.error)
         self.pchart = ProgressChart(2.2)
         c4.body.addWidget(self.pchart)
+        self.att_title = W.label("Urinishlar: holdout t va chegara (to'liq doira — o'tdi, bo'sh — o'tmadi)", "h2")
+        c4.body.addWidget(self.att_title)
+        self.achart = AttemptsChart(2.2)
+        c4.body.addWidget(self.achart)
         lh = QHBoxLayout()
         lh.addWidget(W.label("Jurnal", "h2"))
         lh.addStretch(1)
@@ -152,6 +164,7 @@ class LearnPage(W.Page):
 
         app.learn.line.connect(self._on_line)
         app.learn.progress.connect(self._on_progress)
+        app.learn.attempt.connect(self._on_attempt)
         app.learn.finished.connect(self._on_finished)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick)
@@ -167,6 +180,7 @@ class LearnPage(W.Page):
     def _mode_changed(self, *_a) -> None:
         self.app.settings.set("SL_MODE", self.mode())
         self.app.settings.save()
+        self._budget_changed()
 
     def _browse(self) -> None:
         start = str(Path(self.app.settings.resolve(self.hist.text())).parent) if self.hist.text() else str(app_dir())
@@ -196,11 +210,30 @@ class LearnPage(W.Page):
 
     def _budget_changed(self, *_a) -> None:
         sec = self.budget.value() * 30
-        n = self.repeat.value()
-        self.budget_lbl.setText("%s%s" % (human_secs(sec), ("  ×  %d = %s gacha" % (n, human_secs(sec * n))) if n > 1 else ""))
+        forever = self.forever.isChecked()
+        ml = self.mode() == "ml"
+        self.budget.setEnabled(not ml and not self.app.learn.running)
+        self.repeat.setEnabled(not forever and not self.app.learn.running)
+        n = 1 if forever else self.repeat.value()
+        if ml:
+            self.budget_lbl.setText("ML: har urinish ~5–60 s" + ("  ×  o'tguncha" if forever else ""))
+        else:
+            self.budget_lbl.setText("%s%s" % (human_secs(sec), "  ×  o'tguncha" if forever else
+                                               ("  ×  %d = %s gacha" % (n, human_secs(sec * n))) if n > 1 else ""))
         import sl_core as sc
-        t = sc.eff_min_t(sc.Cfg(trials=n, min_t=float(self.app.settings.get("SL_MIN_T"))))
-        self.t_lbl.setText("Holdout t chegarasi: %.2f%s" % (t, " (qattiqlashtirilgan)" if n > 1 else ""))
+        done = self.attempts_done()
+        t = sc.eff_min_t(sc.Cfg(trials=done + n, min_t=float(self.app.settings.get("SL_MIN_T"))))
+        self.t_lbl.setText("Keyingi urinish uchun holdout t ≥ %.2f%s" % (t, " (qattiqlashtirilgan)" if done + n > 1 else ""))
+        self.done_lbl.setText(("Bu tarixda allaqachon %d urinish bo'lgan — hisob davom etadi, har urinish yangi variant. "
+                               "Urinishlar ko'paygan sari chegara asta oshadi (tasodifiy \"omad\"dan himoya)." % done)
+                              if done else "Bu tarixda hali urinish bo'lmagan.")
+
+    def attempts_done(self) -> int:
+        """state/attempts.json dan shu rejim/simvol/TF uchun eng katta hisob (robot kaliti: rejim|simvol|TF|boshi|hafta)."""
+        d = D.read_json(self.app.settings.state_dir() / "attempts.json") or {}
+        s = self.app.settings
+        pre = "%s|%s|%s|" % (self.mode(), s.get("SL_SYMBOL"), s.get("SL_TF"))
+        return max([int(v) for k, v in d.items() if k.startswith(pre)] or [0])
 
     def _toggle_log(self, on=None) -> None:
         on = not self.log.isVisible() if on is None else on
@@ -216,6 +249,7 @@ class LearnPage(W.Page):
         s.set("SL_BUDGET_SEC", self.budget.value() * 30)
         s.set("SL_REPEAT", self.repeat.value())
         s.set("SL_CONFIRM", self.confirm.text().strip())
+        s.set("SL_FOREVER", self.forever.isChecked())
         s.save()
         if D.history_preview(s.resolve(s.get("SL_HISTORY"))) is None:
             self.banner.set("Tarix fayli topilmadi. 2-qadamda faylni tanlang.", "critical")
@@ -225,7 +259,8 @@ class LearnPage(W.Page):
         self.t0 = time.time()
         self.banner.set("")
         self.error.clear()
-        args = ["--learn"] + (["--force"] if self.force.isChecked() else [])
+        self.stopping = False
+        args = ["--learn"] + (["--force"] if self.force.isChecked() else []) + (["--forever"] if self.forever.isChecked() else [])
         self.app.learn.start(args, s.env())
         self.timer.start(500)
         self._set_running(True)
@@ -235,8 +270,10 @@ class LearnPage(W.Page):
     def _set_running(self, on: bool) -> None:
         self.start_btn.setEnabled(not on)
         self.stop_btn.setEnabled(on)
-        for w in list(self.mode_cards.values()) + [self.hist, self.budget, self.repeat, self.confirm, self.force]:
+        for w in list(self.mode_cards.values()) + [self.hist, self.budget, self.repeat, self.confirm, self.force, self.forever]:
             w.setEnabled(not on)
+        self.repeat.setEnabled(not on and not self.forever.isChecked())
+        self._budget_changed()
         self.state_pill.set("O'rganmoqda…" if on else "Tayyor", "busy" if on else "idle")
         self.app.refresh_nav()
 
@@ -244,10 +281,35 @@ class LearnPage(W.Page):
     def _reset_progress(self) -> None:
         self.frac, self.px, self.py, self.fams = 0.0, [], [], []
         self.attempt, self.of = 1, 1
+        self.attempts, self.att_t0 = [], time.time()
+        self.durations, self._att_start = [], time.time()
+        self.pchart.setVisible(self.mode() != "ml")            # ML da qadamma-qadam baho yo'q
         self.bar.setValue(0)
         self.eta.setText("")
         self.step_lbl.setText("")
         self.pchart.show([], [])
+        self.achart.show([])
+        self.att_title.setVisible(False)
+        self.achart.setVisible(False)
+
+    def stop(self) -> None:
+        self.stopping = True
+        self.app.learn.stop()
+
+    def _on_attempt(self, d: dict) -> None:
+        """Bitta urinish tugadi: grafik, jurnal va natijalar yangilanadi; keyingi urinish uchun progress nolga."""
+        self.attempts.append(d)
+        self.att_title.setVisible(True)
+        self.achart.setVisible(True)
+        self.achart.show(self.attempts)
+        self.frac, self.px, self.py, self.fams = 0.0, [], [], []
+        self.att_t0 = time.time()
+        best = max((a.get("t") or -9) for a in self.attempts)
+        self.step_lbl.setText("Urinish %d tugadi: %s (chegara t ≥ %.2f edi) · eng yaxshi holdout t = %.2f" % (
+            d.get("no", 0), "✓ o'tdi" if d.get("ok") else "✕ o'tmadi", d.get("need_t", 0), best))
+        self.durations = getattr(self, "durations", []) + [time.time() - getattr(self, "_att_start", time.time())]
+        self._att_start = time.time()
+        self._budget_changed()
 
     def _on_line(self, ln: str) -> None:
         self.log.appendPlainText(ln)
@@ -284,8 +346,15 @@ class LearnPage(W.Page):
     def _tick(self) -> None:
         el = time.time() - getattr(self, "t0", time.time())
         budget = self.budget.value() * 30
-        within = min(0.97, (el - (self.attempt - 1) * budget) / max(1.0, budget))
+        # bitta urinish davomiyligi: oldingi urinishlar o'rtachasi; ML vaqt byudjetidan foydalanmaydi (~30 s)
+        durs = getattr(self, "durations", [])
+        per = sum(durs) / len(durs) if durs else (30.0 if self.mode() == "ml" else budget)
+        within = min(0.97, (time.time() - self.att_t0) / max(1.0, per))
         cur = max(self.frac, within if within > 0 else 0)
+        if self.of == 0:                                   # uzluksiz: progress — joriy urinish ichida
+            self.bar.setValue(int(cur * 1000))
+            self.eta.setText("♾ urinish %d · joriy %d%% · jami o'tdi %s" % (len(self.attempts) + 1, cur * 100, human_secs(el)))
+            return
         total = ((self.attempt - 1) + cur) / max(1, self.of)
         self.bar.setValue(int(total * 1000))
         left = max(0, budget * self.of - el) if total < 0.99 else 0
@@ -307,6 +376,12 @@ class LearnPage(W.Page):
                              "Strategiya tegilmagan davrda ustunlik ko'rsatmadi, savdoga qo'yilmaydi. Bu himoya ishlayapti — "
                              "batafsil sabablar «Natijalar» sahifasida.") + "", "good" if ok else "warning")
             self.app.on_learned(self.mode())
+        elif getattr(self, "stopping", False):
+            self.state_pill.set("To'xtatildi", "idle")
+            self.banner.set("O'rganish to'xtatildi: %d urinish bajarildi. Natijalar jurnalda saqlangan, keyingi "
+                            "bosishda hisob davom etadi." % len(self.attempts), "info")
+            if self.attempts:
+                self.app.on_learned(self.mode(), switch=False)
         else:
             self.state_pill.set("Xato / to'xtatildi", "critical")
             self.error.set("O'rganish tugamadi (kod %d). %s" % (code, last),

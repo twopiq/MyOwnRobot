@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDoubleSpinBox, QHB
 
 from . import data as D
 from . import widgets as W
-from .charts import LiveRChart
+from .charts import AttemptsChart, LiveRChart
 from .settings import MODES
 
 
@@ -121,6 +121,18 @@ class LivePage(W.Page):
         sc_.body.addStretch(1)
         row.addWidget(sc_, 1)
         self.lay.addLayout(row)
+
+        lc2 = W.Card("Uzluksiz o'rganish", "Robot savdo qilib turib ham o'rganadi: har yangi sham saqlanadi, har sikl "
+                                           "yangi ma'lumot va variant bilan. Yangi model joriy strategiyadan yaxshi bo'lsagina "
+                                           "almashtiriladi")
+        self.k_cycles = W.KpiTile("O'rganish sikllari")
+        self.k_last = W.KpiTile("Oxirgi sikl")
+        self.k_champ = W.KpiTile("Joriy strategiya")
+        self.k_data = W.KpiTile("Saqlangan ma'lumot")
+        lc2.body.addLayout(W.grid([self.k_cycles, self.k_last, self.k_champ, self.k_data], 4))
+        self.achart = AttemptsChart(2.2)
+        lc2.body.addWidget(self.achart)
+        self.lay.addWidget(lc2)
 
         pc = W.Card("Ochiq pozitsiyalar")
         self.table = QTableWidget(0, 8)
@@ -303,3 +315,42 @@ class LivePage(W.Page):
         self.no_pos.setVisible(not pos)
         if self.rchart.need((tuple(rs), lim, win)):
             self.rchart.show(rs, lim, win)
+        self._learning(st_live)
+
+    def _learning(self, st) -> None:
+        """Uzluksiz o'rganish kartasi: jonli holatdan (ishlayotganda) yoki o'rganish jurnalidan."""
+        s = self.app.settings
+        mode = (st or {}).get("mode") or self.mode.currentData()
+        rows = [r for r in D.learn_log(s.state_dir(), 400) if r.get("mode") == mode][-80:]
+        pts = [{"no": (r.get("extra") or {}).get("attempt_no", i + 1), "ok": bool(r.get("passed")),
+                "t": ((r.get("segments") or {}).get("test") or {}).get("t"),
+                "exp": ((r.get("segments") or {}).get("test") or {}).get("exp"),
+                "need_t": (r.get("extra") or {}).get("min_t", float(s.get("SL_MIN_T")))} for i, r in enumerate(rows)]
+        if self.achart.need((len(rows), rows[-1].get("time") if rows else None)):
+            self.achart.show(pts)
+        if st:
+            busy = st.get("learning")
+            self.k_cycles.set(str(st.get("cycles", 0)), "hozir o'rganmoqda…" if busy else
+                              ("keyingisi %s" % D.until(st.get("next_learn", 0))) if st.get("continuous") else "uzluksiz o'chiq")
+            lr = st.get("last_result") or {}
+            if lr:
+                self.k_last.set("✓ o'tdi" if lr.get("ok") else "✕ o'tmadi", "%s · t=%s (kerak ≥ %s)" % (
+                    D.ago(lr.get("time", 0)), "—" if lr.get("t") is None else "%.2f" % lr["t"],
+                    "—" if lr.get("need_t") is None else "%.2f" % lr["need_t"]), "good" if lr.get("ok") else None)
+            else:
+                self.k_last.set("—", "birinchi sikl davom etmoqda")
+            ch = st.get("champ") or {}
+            self.k_champ.set(("t = %.2f" % ch["t"]) if ch.get("t") is not None else "—",
+                             ("%s joriy qilingan · yangisi undan yaxshi bo'lishi kerak" % D.ago(ch.get("time", 0)))
+                             if ch else "tekshirilgan strategiya hali yo'q")
+            obs = st.get("spread_obs")
+            self.k_data.set("{:,}".format(int(st.get("bars_stored", 0))).replace(",", " ") + " sham",
+                            ("jonli spred %.2f (sozlama %.2f)" % (obs, st.get("spread_cfg", 0))) if obs is not None
+                            else "spred kuzatilmoqda…")
+        else:
+            self.k_cycles.set(str(len(rows)), "jurnaldagi sikllar (robot o'chiq)")
+            last = rows[-1] if rows else None
+            self.k_last.set(("✓ o'tdi" if last.get("passed") else "✕ o'tmadi") if last else "—",
+                            last.get("time", "") if last else "")
+            self.k_champ.set("—", "robot ishga tushganda ko'rinadi")
+            self.k_data.set("—", "")
