@@ -79,6 +79,26 @@ def _feature_names() -> List[str]:
     return FEATURE_NAMES
 
 
+def eval_rules(rules: List[Dict[str, Any]], df: pd.DataFrame, spread: float, slip: float) -> sc.Trades:
+    """Tayyor qoidalar to'plamini istalgan tarixda (boshqa instrument/davr) sinaydi."""
+    b = sc.Bars.of(df)
+    F = build_features(b, df.index)
+    atr = F["_atr"]
+    ix_, ds, sls, tps, hds = [], [], [], [], []
+    for r in rules:
+        m = np.zeros(len(b), dtype=bool)
+        m[sc.WARMUP:] = True
+        for c in r["conds"]:
+            m &= (F[c["f"]] > c["thr"]) if c["op"] > 0 else (F[c["f"]] < c["thr"])
+        ix = np.nonzero(m)[0]
+        ix_.append(ix), ds.append(np.full(len(ix), r["dir"])), sls.append(r["sl"] * atr[ix])
+        tps.append(r["sl"] * r["rr"] * atr[ix]), hds.append(np.full(len(ix), r["hold"]))
+    if not ix_:
+        return sc.Trades.empty()
+    return sc.simulate(b, np.concatenate(ix_), np.concatenate(ds), np.concatenate(sls), np.concatenate(tps),
+                       np.concatenate(hds), spread, slip)
+
+
 # genom: (dir, sl, rr, hold, ((feature, op, qi), ...)); op: 1 -> ">", -1 -> "<"
 Genome = Tuple[int, float, float, int, Tuple[Tuple[str, int, int], ...]]
 
@@ -298,11 +318,16 @@ class Engine:
         rep.segments = {k: sc.stats(res[k]) for k in res}
         te0, te1 = seg["test"]
         ok, why = sc.gate(cfg, rep.segments, sc.chunk_exps(res["test"], te0, te1, 4))
-        rep.ok, rep.reasons = ok, why
         rules = []
         for g in chosen:
             rules.append({"dir": g[0], "sl": g[1], "rr": g[2], "hold": g[3],
                           "conds": [{"f": f, "op": op, "thr": float(TH[f][qi])} for f, op, qi in g[4]]})
+        conf = sc.make_confirm(cfg)
+        if ok and conf:
+            ok2, why2, info = conf(lambda d, sp_, sj_: eval_rules(rules, d, sp_, sj_))
+            ok, why = ok and ok2, why + why2
+            rep.extra["confirm"] = info
+        rep.ok, rep.reasons = ok, why
         cand = Engine(cfg)
         cand.rules, cand.validated = rules, ok
         rep.strategy = cand.describe()

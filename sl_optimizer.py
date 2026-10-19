@@ -298,6 +298,15 @@ class Engine:
         last = trades_for(fam, params, I, cfg, lo, hi)
         rep.segments = {"test": stitched[best][1], "train": sc.stats(last)}
         ok, why = sc.gate(cfg, {"test": rep.segments["test"]}, win_means[best])
+        conf = sc.make_confirm(cfg)
+        if ok and conf:
+            def _ev(d, sp_, sj_):
+                c2 = sc.Cfg(spread=sp_, slippage=sj_)
+                I2 = Ind(sc.Bars.of(d), d.index)
+                return trades_for(fam, params, I2, c2, 0, len(d))
+            ok2, why2, info = conf(_ev)
+            ok, why = ok and ok2, why + why2
+            rep.extra["confirm"] = info
         rep.ok, rep.reasons = ok, why
         rep.strategy = "%s %s" % (best, json.dumps(params, ensure_ascii=False))
         if ok or (not cfg.require_pass and not self.ready()):

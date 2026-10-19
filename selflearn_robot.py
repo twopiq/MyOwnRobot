@@ -14,6 +14,7 @@ SL_TF (M15), SL_MAGIC, SL_MAX_DAILY_LOSS_PCT, SL_DEMO_ONLY. Batafsil: selflearn/
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import importlib
 import json
 import os
@@ -63,10 +64,31 @@ def build_history(cfg: sc.Cfg, br: Optional[sc.Broker] = None) -> pd.DataFrame:
     return sc.limit_years(df, cfg.history_years)
 
 
+def learn_repeat(cfg: sc.Cfg, hist: pd.DataFrame, base: Any = None):
+    """Yangi seed bilan cfg.repeat marta o'rganadi; ko'p urinish — darvoza Bonferroni bo'yicha qattiqlashadi.
+    Birinchi o'tgan urinishda to'xtaydi. Qaytaradi: (dvigatel, hisobot)."""
+    n = max(1, cfg.repeat)
+    last: Optional[tuple] = None
+    for k in range(n):
+        c = dataclasses.replace(cfg, seed=cfg.seed + k, trials=max(cfg.trials, n))
+        eng = load_engine(c)
+        eng.load()
+        rep = eng.learn(hist)
+        rep.extra["attempt"] = "%d/%d" % (k + 1, n)
+        if n > 1:
+            sc.log("urinish %d/%d (seed %d): %s" % (k + 1, n, c.seed, "O'TDI" if rep.ok else "o'tmadi"))
+        last = (eng, rep)
+        if rep.ok:
+            break
+    return last
+
+
 # ================================================================ hisobot
 
 def format_report(rep: sc.Report) -> str:
     lines = ["[%s] %s" % (rep.mode, rep.summary), "  %.0f soniya, %d baho" % (rep.seconds, rep.evals)]
+    if "attempt" in rep.extra:
+        lines.append("  urinish: %s" % rep.extra["attempt"])
     for k in ("train", "val", "test"):
         if k in rep.segments:
             lines.append("  %-5s %s" % (k, sc.fmt_stats(rep.segments[k])))
@@ -134,13 +156,10 @@ class Learner:
         return self.thread is not None and self.thread.is_alive()
 
     def start(self, hist: pd.DataFrame) -> None:
-        cand = load_engine(self.cfg)
-        cand.load()           # mavjud (saqlangan) strategiya — yangisi o'tmasa saqlanib qoladi
-
         def work() -> None:
             try:
                 sc.log("O'RGANISH boshlandi [%s]: %d sham" % (self.cfg.mode, len(hist)))
-                rep = cand.learn(hist)
+                cand, rep = learn_repeat(self.cfg, hist)      # mavjud strategiya yangisi o'tmasa saqlanib qoladi
                 self.result = (cand, rep)
             except Exception as e:  # noqa: BLE001
                 sc.log("O'RGANISH xatosi: %s\n%s" % (e, traceback.format_exc()))
@@ -313,6 +332,8 @@ def main() -> None:
     ap.add_argument("--history", help="tarix fayli (SL_HISTORY)")
     ap.add_argument("--budget", type=float, help="o'rganish vaqti, soniya (SL_BUDGET_SEC)")
     ap.add_argument("--state", help="holat papkasi (SL_STATE_DIR)")
+    ap.add_argument("--repeat", type=int, help="necha marta qayta o'rganish (SL_REPEAT); ko'p urinishda darvoza qattiqlashadi")
+    ap.add_argument("--confirm", help="tasdiqlovchi instrument fayllari: 'fayl|spred|sirpanish;fayl2|spred2' (SL_CONFIRM)")
     ap.add_argument("--force", action="store_true", help="tekshiruvdan o'tmasa ham saqlash (faqat tadqiqot)")
     a = ap.parse_args()
     if a.mode:
@@ -323,14 +344,16 @@ def main() -> None:
         os.environ["SL_BUDGET_SEC"] = str(a.budget)
     if a.state:
         os.environ["SL_STATE_DIR"] = a.state
+    if a.repeat:
+        os.environ["SL_REPEAT"] = str(a.repeat)
+    if a.confirm:
+        os.environ["SL_CONFIRM"] = a.confirm
     if a.force:
         os.environ["SL_REQUIRE_PASS"] = "0"
     cfg = sc.Cfg.from_env()
     if a.learn:
         hist = build_history(cfg, None)
-        eng = load_engine(cfg)
-        eng.load()
-        rep = eng.learn(hist)
+        eng, rep = learn_repeat(cfg, hist)
         sc.append_learn_log(cfg, rep)
         print(format_report(rep))
         return
