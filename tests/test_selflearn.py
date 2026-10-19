@@ -461,3 +461,16 @@ def test_learn_repeat_uses_new_seeds_and_stops_on_first_pass(tmp_path, hist, mon
     calls.clear()
     eng, rep = sr.learn_repeat(sc.Cfg(seed=1, repeat=2), hist)
     assert len(calls) == 2 and not rep.ok
+
+
+def test_broker_passes_terminal_path_and_checks_login():
+    m = make_fake()
+    seen = {}
+    m.initialize = lambda **k: seen.update(k) or True
+    sc.Broker(sc.Cfg(terminal=r"E:\MT5\terminal64.exe", portable=True, login=1), m).connect()
+    assert seen == {"path": r"E:\MT5\terminal64.exe", "portable": True}
+    with pytest.raises(RuntimeError, match="boshqa hisobga"):
+        sc.Broker(sc.Cfg(terminal="x.exe", login=999), make_fake()).connect()
+    seen.clear()
+    sc.Broker(sc.Cfg(), m).connect()
+    assert seen == {}
