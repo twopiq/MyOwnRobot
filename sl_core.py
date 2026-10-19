@@ -472,8 +472,32 @@ def eff_min_t(cfg: Cfg) -> float:
     return max(cfg.min_t, NormalDist().inv_cdf(1.0 - 0.1587 / cfg.trials))
 
 
-def gate(cfg: Cfg, seg: Dict[str, Dict[str, float]], test_chunks: List[float]) -> Tuple[bool, List[str]]:
-    """Strategiyani jonli savdoga qo'yish uchun qabul darvozasi: tegilmagan holdout davrida foydali bo'lishi shart."""
+def gate_checks(cfg: Cfg, seg: Dict[str, Dict[str, float]], test_chunks: List[float]) -> List[Dict[str, Any]]:
+    """Darvozaning har bir sharti alohida: {key, label, value, need, ok} — desktop ilova infografikasi uchun."""
+    te, va, tr = seg.get("test", {}), seg.get("val", {}), seg.get("train", {})
+    out = [{"key": "n", "label": "Holdout bitimlari", "value": te.get("n", 0), "need": cfg.min_test_trades, "op": ">="},
+           {"key": "exp", "label": "Holdout kutilma (R)", "value": te.get("exp", 0.0), "need": cfg.min_exp_r, "op": ">="},
+           {"key": "pf", "label": "Holdout PF", "value": te.get("pf", 0.0), "need": cfg.min_pf, "op": ">="},
+           {"key": "t", "label": "Holdout t-statistika", "value": te.get("t", 0.0), "need": eff_min_t(cfg), "op": ">="}]
+    if va:
+        out.append({"key": "val", "label": "Validatsiya kutilma (R)", "value": va.get("exp", 0.0), "need": 0.0, "op": ">"})
+    if tr:
+        out.append({"key": "train", "label": "Train kutilma (R)", "value": tr.get("exp", 0.0), "need": 0.0, "op": ">"})
+    if test_chunks:
+        share = sum(1 for x in test_chunks if x > 0) / len(test_chunks)
+        out.append({"key": "chunks", "label": "Foydali holdout bo'laklari", "value": share, "need": cfg.min_pos_chunks, "op": ">="})
+    for c in out:
+        c["value"] = float(c["value"])
+        c["ok"] = bool(c["value"] >= c["need"] if c["op"] == ">=" else c["value"] > c["need"])
+    return out
+
+
+def gate(cfg: Cfg, seg: Dict[str, Dict[str, float]], test_chunks: List[float],
+         rep: Optional["Report"] = None) -> Tuple[bool, List[str]]:
+    """Strategiyani jonli savdoga qo'yish uchun qabul darvozasi: tegilmagan holdout davrida foydali bo'lishi shart.
+    rep berilsa, shartlar tafsiloti rep.checks ga yoziladi."""
+    if rep is not None:
+        rep.checks = gate_checks(cfg, seg, test_chunks)
     why: List[str] = []
     te, va, tr = seg.get("test", {}), seg.get("val", {}), seg.get("train", {})
     if te.get("n", 0) < cfg.min_test_trades:
@@ -556,11 +580,56 @@ class Report:
     seconds: float = 0.0
     strategy: str = ""
     extra: Dict[str, Any] = field(default_factory=dict)
+    checks: List[Dict[str, Any]] = field(default_factory=list)      # darvoza shartlari (gate_checks)
+    curves: Dict[str, Dict[str, list]] = field(default_factory=dict)  # segment -> {t: epoch, r: R} (curves_of)
 
     def to_json(self) -> Dict[str, Any]:
         return {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "mode": self.mode, "passed": self.ok,
                 "deployed": self.deployed, "segments": self.segments, "reasons": self.reasons, "evals": self.evals,
                 "seconds": round(self.seconds, 1), "strategy": self.strategy, "extra": self.extra}
+
+
+def curves_of(res: Dict[str, Trades], index: pd.DatetimeIndex) -> Dict[str, Dict[str, list]]:
+    """Segment bitimlari -> ixcham egri chiziq: kirish vaqti (epoch, s), R va yo'nalish. Faqat hisobot/ilova uchun."""
+    out: Dict[str, Dict[str, list]] = {}
+    for k, t in res.items():
+        if t is None or not len(t):
+            continue
+        o = np.argsort(t.entry_i, kind="stable")
+        ix = np.clip(t.entry_i[o], 0, len(index) - 1)
+        out[k] = {"t": index[ix].values.astype("datetime64[s]").astype("int64").tolist(), "r": np.round(t.R[o], 3).tolist(),
+                  "d": t.dirs[o].astype(int).tolist()}
+    return out
+
+
+def write_json(path: Path, data: Any) -> None:
+    """Atomar yozish: ilova yarim yozilgan faylni o'qib qolmasligi uchun."""
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, default=float), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def save_report(cfg: Cfg, rep: "Report", hist: pd.DataFrame) -> Optional[Path]:
+    """To'liq hisobot (egri chiziqlar, darvoza shartlari, davr chegaralari) -> state/report_<rejim>.json."""
+    try:
+        d = rep.to_json()
+        n = len(hist)
+        d.update({"symbol": cfg.symbol, "tf": cfg.tf, "checks": rep.checks, "curves": rep.curves, "bars": n,
+                  "history": [str(hist.index[0]), str(hist.index[-1])] if n else [],
+                  "costs": {"spread": cfg.spread, "slippage": cfg.slippage}})
+        if n:
+            if rep.mode == "optimizer":
+                t0 = rep.curves.get("test", {}).get("t", [])
+                cut = pd.Timestamp(t0[0], unit="s") if t0 else hist.index[-1]
+                d["bounds"] = {"train": [str(hist.index[0]), str(cut)], "test": [str(cut), str(hist.index[-1])]}
+            else:
+                d["bounds"] = {k: [str(hist.index[a]), str(hist.index[min(b, n) - 1])] for k, (a, b) in split_ranges(n).items()}
+        p = state_path(cfg, "report_%s.json" % rep.mode)
+        write_json(p, d)
+        return p
+    except Exception as e:  # noqa: BLE001
+        log("hisobot saqlanmadi: %s" % e)
+        return None
 
 
 def state_path(cfg: Cfg, name: str) -> Path:
