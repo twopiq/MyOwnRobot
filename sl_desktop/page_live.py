@@ -1,7 +1,6 @@
 """Jonli savdo paneli: MT5 ulanishi, start/stop, hisob, pozitsiyalar, xavf o'lchagichlari, jonli bitimlar."""
 from __future__ import annotations
 
-import html
 
 import datetime as dt
 import importlib.util
@@ -33,6 +32,8 @@ class LivePage(W.Page):
 
         self.banner = W.Banner()
         self.lay.addWidget(self.banner)
+        self.error = W.ErrorPanel()
+        self.lay.addWidget(self.error)
 
         cc = W.Card("Ulanish va boshqaruv", "MT5 terminali ochiq va DEMO hisobga kirilgan bo'lishi kerak")
         g = QHBoxLayout()
@@ -185,6 +186,7 @@ class LivePage(W.Page):
                 return
         self.log.clear()
         self.last_error = ""
+        self.error.clear()
         self.app.live.start([], s.env())
         self.refresh()
 
@@ -197,8 +199,11 @@ class LivePage(W.Page):
             self.pill.set("To'xtatilmoqda…", "busy")
 
     def _finished(self, code: int, last: str) -> None:
-        if code not in (0,) and last:
-            self.last_error = last
+        if code != 0:
+            self.last_error = last or "kod %d" % code
+            self.error.set("Robot to'xtadi (kod %d). %s" % (code, last),
+                           W.error_report("Jonli savdo (rejim %s)" % self.mode.currentData(), code, last, self.app,
+                                          self.log.toPlainText()))
         self.refresh()
         self.app.refresh_nav()
 
@@ -222,8 +227,6 @@ class LivePage(W.Page):
             self.banner.set("MetaTrader5 Python kutubxonasi topilmadi%s. Jonli savdo faqat Windows'da, MT5 terminali bilan "
                             "ishlaydi: pip install MetaTrader5. O'rganish va natijalar MT5siz ishlaydi." % (
                                 "" if sys.platform == "win32" else " (bu kompyuter Windows emas)"), "warning")
-        elif self.last_error and not running:
-            self.banner.set("Robot to'xtadi: " + html.escape(self.last_error), "critical")
         elif running and st is not None and not fresh:
             self.banner.set("Ulanmoqda… (MT5 terminali javobini kutish)", "info")
         else:

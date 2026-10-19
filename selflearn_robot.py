@@ -377,6 +377,7 @@ def _risk_money(br: sc.Broker, p: Any, sig: sc.Signal) -> float:
 # ================================================================ CLI
 
 def main() -> None:
+    sc.force_utf8_stdio()
     ap = argparse.ArgumentParser(description="Self-learning robot")
     ap.add_argument("--learn", action="store_true", help="faqat o'rganish (oflayn, savdosiz, MT5 kerak emas)")
     ap.add_argument("--mode", choices=list(sc.MODES), help="SL_MODE ni bekor qiladi")

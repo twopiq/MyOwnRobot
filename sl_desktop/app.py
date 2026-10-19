@@ -20,6 +20,7 @@ from .page_results import ResultsPage
 from .page_settings import SettingsPage
 from .runner import RobotProcess
 from .settings import Settings
+from .update_ui import UpdateManager, show_whats_new
 
 NAV = [("dashboard", "🏠   Bosh sahifa"), ("learn", "🧠   O'rganish"), ("results", "📊   Natijalar"),
        ("live", "💹   Jonli savdo"), ("journal", "🗂   Jurnal"), ("settings", "⚙   Sozlamalar"), ("help", "❔   Yordam")]
@@ -40,6 +41,8 @@ class MainWindow(QMainWindow):
         self.live = RobotProcess("live", self)
         self.live.started.connect(self.refresh_nav)
         self.learn.finished.connect(lambda *_: self.refresh_nav())
+        self.updates = UpdateManager(self)
+        self.updates.changed.connect(self.refresh_nav)
 
         root = QWidget()
         h = QHBoxLayout(root)
@@ -68,6 +71,12 @@ class MainWindow(QMainWindow):
             sl.addWidget(b)
             self.nav[key] = b
         sl.addStretch(1)
+        self.upd_btn = QPushButton("")
+        self.upd_btn.setObjectName("nav")
+        self.upd_btn.setStyleSheet("QPushButton#nav { background: rgba(57,135,229,0.25); color: #ffffff; font-weight: 600; }")
+        self.upd_btn.clicked.connect(self._update_clicked)
+        self.upd_btn.setVisible(False)
+        sl.addWidget(self.upd_btn)
         self.side_learn = W.StatusPill("O'rganish: yo'q", "idle")
         self.side_live = W.StatusPill("Robot: o'chiq", "idle")
         for x in (self.side_learn, self.side_live):
@@ -87,6 +96,8 @@ class MainWindow(QMainWindow):
         self.timer.timeout.connect(self._tick)
         self.timer.start(2000)
         self.go("dashboard")
+        self.updates.start_auto()
+        QTimer.singleShot(500, lambda: show_whats_new(self))
 
     # ------------------------------------------------------------ navigatsiya
     def go(self, key: str) -> None:
@@ -117,6 +128,15 @@ class MainWindow(QMainWindow):
         st, fresh = D.live_status(self.settings.state_dir())
         text, tone = self.robot_state(st if self.live.running and fresh else None)
         self.side_live.set("Robot: " + text.lower() if self.live.running else "Robot: o'chiq", tone)
+        txt, _tone = self.updates.badge()
+        self.upd_btn.setText(("⬆   " + txt) if txt else "")
+        self.upd_btn.setVisible(bool(txt))
+
+    def _update_clicked(self) -> None:
+        if self.updates.state in ("ready", "full_ready"):
+            self.updates.restart()
+        else:
+            self.go("settings")
 
     def robot_state(self, st) -> Tuple[str, str]:
         """Jonli robot holati -> (yozuv, ohang)."""

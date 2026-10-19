@@ -10,7 +10,7 @@ jobs:
   windows:
     runs-on: windows-latest
     permissions:
-      contents: write   # v* teglarida GitHub Release yaratish uchun
+      contents: write   # reliz yaratish uchun
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -21,36 +21,65 @@ jobs:
         run: python -m pytest -q tests
         env:
           QT_QPA_PLATFORM: offscreen
+      - name: Versiya
+        id: ver
+        shell: bash
+        run: echo "version=$(python -c 'import sl_desktop as s; print(s.__version__)')" >> "$GITHUB_OUTPUT"
+      - name: Ilova kodi arxivi (yangilanadigan qism)
+        shell: pwsh
+        env:
+          NOTES: ${{ github.event.head_commit.message }}
+        run: python tools/release.py app --notes "$env:NOTES"
       - name: .exe yig'ish
         run: pyinstaller --noconfirm build.spec
       - name: Yig'ilgan .exe ni sinash (--self-test)
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
+          MYOWNROBOT_UPDATES_DIR: ${{ runner.temp }}\no_updates
         run: |
           $out = Join-Path $env:RUNNER_TEMP 'selftest.json'
           $p = Start-Process -FilePath 'dist\MyOwnRobot\MyOwnRobot.exe' -ArgumentList '--self-test', $out -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "self-test chiqish kodi: $($p.ExitCode)" }
-          Get-Content $out
+          $j = Get-Content $out | ConvertFrom-Json
+          Write-Host "Versiya: $($j.version)  Manba: $($j.source)"
+          if ($j.version -ne '${{ steps.ver.outputs.version }}') { throw "Versiya mos emas" }
+          if ($j.source -notlike '*app\myownrobot_app.zip') { throw "Kod zip'dan yuklanmadi" }
       - name: Robot .exe ichidan ishlashini sinash (--robot --learn)
         shell: pwsh
+        env:
+          MYOWNROBOT_UPDATES_DIR: ${{ runner.temp }}\no_updates
         run: |
           $st = Join-Path $env:RUNNER_TEMP 'st'
           $p = Start-Process -FilePath 'dist\MyOwnRobot\MyOwnRobot.exe' -ArgumentList '--robot','--learn','--mode','ml','--history','_internal\data\XAUUSD_M15.csv','--state',$st -Wait -PassThru -WorkingDirectory 'dist\MyOwnRobot'
           if ($p.ExitCode -ne 0) { throw "robot chiqish kodi: $($p.ExitCode)" }
           if (-not (Test-Path (Join-Path $st 'report_ml.json'))) { throw "hisobot yozilmadi" }
-      - name: Arxivlash
+      - name: Arxivlash va yangilanish fayllari
         shell: pwsh
-        run: Compress-Archive -Path dist/MyOwnRobot -DestinationPath MyOwnRobot_Windows.zip
+        env:
+          NOTES: ${{ github.event.head_commit.message }}
+        run: |
+          Compress-Archive -Path dist/MyOwnRobot -DestinationPath MyOwnRobot_Windows.zip
+          python tools/release.py publish release --full MyOwnRobot_Windows.zip --notes "$env:NOTES"
       - uses: actions/upload-artifact@v4
         with:
           name: MyOwnRobot_Windows
-          path: MyOwnRobot_Windows.zip
-      - name: Reliz (v* teg)
-        if: startsWith(github.ref, 'refs/tags/v')
+          path: release/*
+      - name: Reliz (v* teg yoki [release] commit)
+        # v* tegida yoki commit xabarida [release] bo'lsa — teg va relizni GitHub o'zi yaratadi.
+        # O'rnatilgan dasturlar releases/latest/download/update.json orqali yangilanishni topadi.
+        if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || contains(github.event.head_commit.message, '[release]'))
         uses: softprops/action-gh-release@v2
         with:
-          files: MyOwnRobot_Windows.zip
+          files: release/*
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v{0}', steps.ver.outputs.version) }}
+          target_commitish: ${{ github.sha }}
+          name: MyOwnRobot ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v{0}', steps.ver.outputs.version) }}
           body: |
-            Windows uchun tayyor desktop ilova. `MyOwnRobot_Windows.zip` ni oching va `MyOwnRobot\MyOwnRobot.exe` ni ishga tushiring.
-            Jonli savdo uchun MetaTrader 5 terminali (DEMO hisob) kerak.
+            Windows uchun tayyor desktop ilova.
+
+            **Birinchi o'rnatish:** `MyOwnRobot_Windows.zip` ni yuklab oling, arxivni oching va
+            `MyOwnRobot\MyOwnRobot.exe` ni ishga tushiring. Jonli savdo uchun MetaTrader 5 terminali (DEMO hisob) kerak.
+
+            **Yangilash:** o'rnatilgan dastur o'zi yangilanadi (Sozlamalar → Yangilanish). `update.json` va
+            `myownrobot_app-*.zip` — yangilanish fayllari; tarmoq papkasidan yangilash uchun shu uch faylni papkaga ko'chiring.

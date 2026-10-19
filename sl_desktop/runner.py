@@ -110,5 +110,29 @@ class RobotProcess(QObject):
             s = ln.strip()
             if s.startswith(("RuntimeError", "SystemExit", "ModuleNotFoundError", "ImportError", "ValueError",
                              "FileNotFoundError", "OSError")) or "Error:" in s:
-                return s.split(":", 1)[-1].strip() if ":" in s else s
+                return s
         return self._tail[-1] if self._tail else ""
+
+
+# Ma'lum xatolar: matndagi belgi -> foydalanuvchiga tushunarli izoh va nima qilish kerakligi
+HINTS = [
+    ("UnicodeEncodeError", "Konsol kodirovkasi maxsus belgini (≥, × …) chiqara olmadi. Ilovani yangilang — "
+                           "1.1.1 dan boshlab robot chiqishi UTF-8 da."),
+    ("MetaTrader5", "MetaTrader5 Python kutubxonasi yo'q: Windows'da `pip install MetaTrader5` (yoki .exe versiyasidan foydalaning)."),
+    ("MT5 initialize", "MT5 terminali ochilmagan yoki topilmadi. Terminalni oching, hisobga kiring yoki "
+                       "Jonli savdo → terminal64.exe yo'lini ko'rsating."),
+    ("faqat DEMO", "Terminal REAL hisobga ulangan. Robot faqat DEMO hisobda ishlaydi — terminalda demo hisobga kiring."),
+    ("boshqa hisobga", "Terminal boshqa hisobga ulangan. «Hisob raqami» maydonini yoki terminal yo'lini tekshiring."),
+    ("simvol topilmadi", "Brokerda bunday simvol yo'q. Simvol nomini MT5 dagi «Market Watch» bilan solishtiring (masalan XAUUSD.m)."),
+    ("tarix yo'q", "Tarix fayli topilmadi va MT5 tarixi ham yo'q. O'rganish sahifasida tarix faylini tanlang."),
+    ("tarix fayli topilmadi", "Ko'rsatilgan tarix fayli mavjud emas — yo'lni tekshiring."),
+    ("MemoryError", "Xotira yetmadi. «Tarix chuqurligi» ni kamaytiring (masalan 3 yil) yoki boshqa dasturlarni yoping."),
+    ("PermissionError", "Faylga yozish ruxsati yo'q. Dasturni yozish mumkin bo'lgan papkaga ko'chiring."),
+]
+
+
+def explain_error(text: str) -> str:
+    for key, hint in HINTS:
+        if key.lower() in (text or "").lower():
+            return hint
+    return ""

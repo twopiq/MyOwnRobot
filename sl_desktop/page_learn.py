@@ -1,7 +1,6 @@
 """O'rganish sahifasi: 3 qadam — rejim, tarix, parametrlar — va jarayonni jonli kuzatish."""
 from __future__ import annotations
 
-import html
 
 import time
 from pathlib import Path
@@ -128,6 +127,8 @@ class LearnPage(W.Page):
         c4.body.addWidget(self.step_lbl)
         self.banner = W.Banner()
         c4.body.addWidget(self.banner)
+        self.error = W.ErrorPanel()
+        c4.body.addWidget(self.error)
         self.pchart = ProgressChart(2.2)
         c4.body.addWidget(self.pchart)
         lh = QHBoxLayout()
@@ -223,6 +224,7 @@ class LearnPage(W.Page):
         self._reset_progress()
         self.t0 = time.time()
         self.banner.set("")
+        self.error.clear()
         args = ["--learn"] + (["--force"] if self.force.isChecked() else [])
         self.app.learn.start(args, s.env())
         self.timer.start(500)
@@ -307,7 +309,8 @@ class LearnPage(W.Page):
             self.app.on_learned(self.mode())
         else:
             self.state_pill.set("Xato / to'xtatildi", "critical")
-            self.banner.set("O'rganish tugamadi (kod %d). %s" % (code, html.escape(last)), "critical")
+            self.error.set("O'rganish tugamadi (kod %d). %s" % (code, last),
+                           W.error_report("O'rganish (rejim %s)" % self.mode(), code, last, self.app, self.log.toPlainText()))
             self._toggle_log(True)
 
     def refresh(self) -> None:

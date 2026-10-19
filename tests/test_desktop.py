@@ -111,3 +111,32 @@ def test_window_renders_all_pages(tmp_path, monkeypatch):
     state, tone = w.robot_state(None)
     assert tone == "idle"
     w.close()
+
+
+def test_robot_output_survives_cp1252_console(tmp_path):
+    """Windows konsoli (cp1252) "≥" ni chiqara olmaydi — robot baribir UTF-8 da yozishi kerak (ML strategiya matni)."""
+    hp = tmp_path / "h.csv"
+    synth(40_000).to_csv(hp, index_label="time")
+    env = {**os.environ, "PYTHONIOENCODING": "cp1252", "SL_REQUIRE_PASS": "0"}
+    out = subprocess.run([sys.executable, str(SL_DIR / "selflearn_robot.py"), "--learn", "--mode", "ml", "--history", str(hp),
+                          "--state", str(tmp_path / "st")], capture_output=True, env=env)
+    assert out.returncode == 0, out.stderr.decode("utf-8", "replace")[-1500:]
+    assert "≥" in out.stdout.decode("utf-8")
+
+
+def test_error_panel_copies_full_report(tmp_path, monkeypatch):
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    from sl_desktop.app import MainWindow
+    from sl_desktop.settings import Settings
+    app = QApplication.instance() or QApplication([])
+    w = MainWindow(Settings(tmp_path / "s.json", state=tmp_path / "st"))
+    lp = w.pages["learn"]
+    lp.log.appendPlainText("10:00:00 O'RGANISH boshlandi\nUnicodeEncodeError: 'charmap' codec can't encode character '\\u2265'")
+    lp._on_finished(1, "UnicodeEncodeError: 'charmap' codec can't encode character '\\u2265'")
+    assert lp.error.isVisibleTo(lp) and "💡" in lp.error.text.text()
+    lp.error.copy()
+    clip = QApplication.clipboard().text()
+    assert "Chiqish kodi: 1" in clip and "O'RGANISH boshlandi" in clip and "SL_MODE=" in clip
+    w.close()

@@ -449,3 +449,84 @@ class Page(QWidget):
 
     def refresh(self) -> None:
         """Ma'lumot yoki mavzu o'zgarganda qayta chizish."""
+
+
+def error_report(title: str, code: int, error: str, app=None, log_text: str = "", tail: int = 150) -> str:
+    """Xato haqida to'liq matn: versiya, tizim, asosiy sozlamalar va jurnal oxiri (nusxalab yuborish uchun)."""
+    import platform
+    import sys
+    import time
+    from . import __version__
+    lines = ["MyOwnRobot %s · %s · Python %s · %s" % (
+                 __version__, platform.platform(), platform.python_version(),
+                 ".exe" if getattr(sys, "frozen", False) else "manba kod"),
+             "Vaqt: %s" % time.strftime("%Y-%m-%d %H:%M:%S"),
+             "Jarayon: %s" % title,
+             "Chiqish kodi: %s" % code,
+             "Xato: %s" % (error or "—")]
+    if app is not None:
+        s = app.settings
+        keys = ("SL_MODE", "SL_SYMBOL", "SL_TF", "SL_HISTORY", "SL_BUDGET_SEC", "SL_REPEAT", "SL_REQUIRE_PASS", "SL_DEMO_ONLY")
+        lines.append("Sozlamalar: " + ", ".join("%s=%s" % (k, s.get(k)) for k in keys))
+    body = [ln for ln in (log_text or "").splitlines()]
+    if body:
+        lines += ["", "--- Jurnal (oxirgi %d qator) ---" % min(tail, len(body))] + body[-tail:]
+    return "\n".join(lines)
+
+
+class ErrorPanel(QFrame):
+    """Xato satri + «Nusxalash» va «Jurnalni saqlash» tugmalari. Matn tanlab olinadigan (sichqoncha bilan)."""
+
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(14, 10, 14, 10)
+        top = QHBoxLayout()
+        self.pill = StatusPill("", "critical")
+        self.pill.setFixedWidth(26)
+        top.addWidget(self.pill)
+        self.text = label("", wrap=True, plain=True)
+        self.text.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        top.addWidget(self.text, 1)
+        lay.addLayout(top)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        self.copy_btn = QPushButton("📋  Xatoni nusxalash")
+        self.copy_btn.setToolTip("Xato, versiya, sozlamalar va jurnal oxirini buferga nusxalaydi")
+        self.copy_btn.clicked.connect(self.copy)
+        self.save_btn = QPushButton("💾  Jurnalni saqlash")
+        self.save_btn.clicked.connect(self.save)
+        row.addWidget(self.copy_btn)
+        row.addWidget(self.save_btn)
+        lay.addLayout(row)
+        self.details = ""
+        col = theme.c("critical")
+        self.setStyleSheet("ErrorPanel { background: %s; border: 1px solid %s; border-radius: 10px; }" % (
+            _alpha(col, 0.10), _alpha(col, 0.45)))
+        self.setVisible(False)
+
+    def set(self, text: str, details: str) -> None:
+        from .runner import explain_error
+        hint = explain_error(text)
+        self.text.setText(text + ("\n\n💡 " + hint if hint else ""))
+        self.details = details
+        self.copy_btn.setText("📋  Xatoni nusxalash")
+        self.setVisible(True)
+
+    def clear(self) -> None:
+        self.details = ""
+        self.setVisible(False)
+
+    def copy(self) -> None:
+        from PySide6.QtWidgets import QApplication
+        QApplication.clipboard().setText(self.details)
+        self.copy_btn.setText("✓  Nusxalandi")
+
+    def save(self) -> None:
+        import time
+        from PySide6.QtWidgets import QFileDialog
+        name = "myownrobot_xato_%s.txt" % time.strftime("%Y%m%d_%H%M%S")
+        f, _ = QFileDialog.getSaveFileName(self, "Jurnalni saqlash", name, "Matn (*.txt)")
+        if f:
+            with open(f, "w", encoding="utf-8") as fh:
+                fh.write(self.details)
