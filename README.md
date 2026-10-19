@@ -65,11 +65,20 @@ Foyda kafolati yo'q; robot faqat demo uchun.
 4. Boshqa tarix fayli: `python make_history.py kirish.pkl|csv chiqish.csv M15` (MT4 eksporti, epoch, pkl, parquet o'qiladi;
    fayl vaqti serverda bo'lsa `SL_HISTORY_GMT=2`).
 
+## Qaysi MT5 terminali ishlatiladi?
+Robotning o'z terminali yo'q. Mustaqil ishga tushirilganda bir nechta terminal ochiq bo'lsa, MT5 kutubxonasi o'zi tanlaydi — noto'g'ri hisobga ulanishi mumkin. Aniq ko'rsating:
+```
+set SL_TERMINAL=E:\Program files\MetaTrader 5\terminal64.exe
+set SL_LOGIN=114043214
+```
+`SL_LOGIN` ulangan hisob boshqa bo'lsa robotni to'xtatadi. Portable terminal (papka ichida `portable` rejimida) uchun `SL_PORTABLE=1` (yo'l berilganda standart yoqilgan).
+Robot No.1 orqali ishga tushirilsa bu sozlamalar kerak emas — dastur har slotning terminalini o'zi beradi.
+
 ## Sozlamalar (env)
 `SL_MODE`, `SL_HISTORY`, `SL_HISTORY_GMT`, `SL_HISTORY_YEARS`, `SL_TF`, `SL_RISK_PCT` (0.5), `SL_SPREAD` (0.30), `SL_SLIPPAGE` (0.05),
 `SL_MAX_SPREAD` (0.80), `SL_MAX_POS` (1), `SL_MAGIC`, `SL_RELEARN_HOURS` (168), `SL_BUDGET_SEC` (240), `SL_REQUIRE_PASS` (1),
 `SL_DEMO_ONLY` (1), `SL_SEED`, `SL_MAX_DAILY_LOSS_PCT` (3), `SL_KILL_WINDOW`/`SL_KILL_SUM_R`, darvoza: `SL_MIN_TEST_TRADES`,
-`SL_MIN_EXP_R`, `SL_MIN_PF`, `SL_MIN_T`, `SL_MIN_POS_CHUNKS`; `SL_REPEAT`, `SL_TRIALS`, `SL_CONFIRM`; `SL_OPT_SAMPLES`; ML: `SL_ML_SL`, `SL_ML_RR`, `SL_ML_HOLD`.
+`SL_MIN_EXP_R`, `SL_MIN_PF`, `SL_MIN_T`, `SL_MIN_POS_CHUNKS`; `SL_TERMINAL`, `SL_LOGIN`, `SL_PORTABLE`, `SL_REPEAT`, `SL_TRIALS`, `SL_CONFIRM`; `SL_OPT_SAMPLES`; ML: `SL_ML_SL`, `SL_ML_RR`, `SL_ML_HOLD`.
 Telegram: `TELEGRAM_ENABLED`, `TG_BOT_TOKEN`, `TG_CHAT_ID` (Robot No.1 o'zi beradi).
 
 ## Testlar

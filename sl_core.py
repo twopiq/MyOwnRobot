@@ -80,6 +80,9 @@ class Cfg:
     demo_only: bool = True
     seed: int = 7
     state_dir: str = "state"
+    terminal: str = ""              # terminal64.exe yo'li (bo'sh — MT5 kutubxonasi o'zi tanlaydi)
+    portable: bool = False
+    login: int = 0                  # kutilgan hisob raqami (0 — tekshirilmaydi)
     server_gmt: float = float("nan")   # MT5 server GMT (qishki) — bo'sh bo'lsa avtomatik aniqlanadi
     # --- qabul darvozasi (holdout = eng oxirgi tegilmagan davr)
     min_test_trades: int = 40
@@ -121,6 +124,9 @@ class Cfg:
         c.demo_only = env_b("SL_DEMO_ONLY", c.demo_only)
         c.seed = env_i("SL_SEED", c.seed)
         c.state_dir = _env("SL_STATE_DIR", c.state_dir)
+        c.terminal = _env("SL_TERMINAL", c.terminal).strip('"')
+        c.portable = env_b("SL_PORTABLE", bool(c.terminal))
+        c.login = env_i("SL_LOGIN", c.login)
         sg = _env("SL_SERVER_GMT", "")
         c.server_gmt = float(sg) if sg else float("nan")
         c.min_test_trades = env_i("SL_MIN_TEST_TRADES", c.min_test_trades)
@@ -604,11 +610,17 @@ class Broker:
     # --- ulanish
     def connect(self) -> None:
         m = self.mt5
-        if not m.initialize():
+        kw: Dict[str, Any] = {}
+        if self.cfg.terminal:
+            kw = {"path": self.cfg.terminal, "portable": self.cfg.portable}
+        if not m.initialize(**kw):
             raise RuntimeError("MT5 initialize xato: %s" % (m.last_error(),))
         ai = m.account_info()
         if ai is None:
             raise RuntimeError("MT5 hisob ma'lumoti yo'q")
+        if self.cfg.login and int(ai.login) != self.cfg.login:
+            raise RuntimeError("Terminal boshqa hisobga ulangan: %s (kutilgan SL_LOGIN=%s) — SL_TERMINAL yo'lini tekshiring" % (
+                ai.login, self.cfg.login))
         if self.cfg.demo_only and int(ai.trade_mode) != int(m.ACCOUNT_TRADE_MODE_DEMO):
             raise RuntimeError("Bu robot faqat DEMO hisobda ishlaydi (SL_DEMO_ONLY=0 bilan o'chiriladi)")
         if not m.symbol_select(self.cfg.symbol, True):
