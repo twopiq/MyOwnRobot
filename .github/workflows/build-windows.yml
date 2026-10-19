@@ -13,6 +13,8 @@ jobs:
       contents: write   # reliz yaratish uchun
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # teglar kerak: versiya relizi bor-yo'qligini tekshirish uchun
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -25,6 +27,17 @@ jobs:
         id: ver
         shell: bash
         run: echo "version=$(python -c 'import sl_desktop as s; print(s.__version__)')" >> "$GITHUB_OUTPUT"
+      - name: Reliz kerakmi
+        id: rel
+        shell: bash
+        env:
+          FORCED: ${{ startsWith(github.ref, 'refs/tags/v') || contains(github.event.head_commit.message, '[release]') }}
+          VER: ${{ steps.ver.outputs.version }}
+        # main ga yangi versiya kelsa (v<versiya> tegi hali yo'q) — reliz avtomatik; aks holda faqat [release] yoki v* teg
+        run: |
+          if [ "$FORCED" = "true" ]; then echo "do=true" >> "$GITHUB_OUTPUT"
+          elif [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF" = "refs/heads/main" ] && ! git rev-parse -q --verify "refs/tags/v$VER" >/dev/null; then echo "do=true" >> "$GITHUB_OUTPUT"
+          else echo "do=false" >> "$GITHUB_OUTPUT"; fi
       - name: Ilova kodi arxivi (yangilanadigan qism)
         shell: pwsh
         env:
@@ -65,10 +78,9 @@ jobs:
         with:
           name: MyOwnRobot_Windows
           path: release/*
-      - name: Reliz (v* teg yoki [release] commit)
-        # v* tegida yoki commit xabarida [release] bo'lsa — teg va relizni GitHub o'zi yaratadi.
+      - name: Reliz (main'da yangi versiya, v* teg yoki [release] commit)
         # O'rnatilgan dasturlar releases/latest/download/update.json orqali yangilanishni topadi.
-        if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || contains(github.event.head_commit.message, '[release]'))
+        if: github.event_name == 'push' && steps.rel.outputs.do == 'true'
         uses: softprops/action-gh-release@v2
         with:
           files: release/*

@@ -339,3 +339,31 @@ class ProgressChart(Chart):
         ax.set_ylabel("eng yaxshi train t", color=p["muted"], fontsize=9)
         self.add_hover(np.asarray(xs, float), np.asarray(ys, float), lambda i: "%s %d\nbaho %.2f" % (xlabel, xs[i], ys[i]))
         self.finish()
+
+
+class AttemptsChart(Chart):
+    """Uzluksiz o'rganish: har urinishdagi holdout t (nuqta) va urinishlar ko'paygan sari ko'tariluvchi chegara (zinapoya)."""
+
+    def show(self, rows: Sequence[Dict[str, Any]]) -> None:
+        if not rows:
+            self.empty("Urinishlar natijasi shu yerda paydo bo'ladi")
+            return
+        p = theme.current()
+        ax = self.begin()
+        x = np.array([r["no"] for r in rows], dtype=float)
+        y = np.array([r.get("t") if r.get("t") is not None else np.nan for r in rows], dtype=float)
+        need = np.array([r.get("need_t", 1.0) for r in rows], dtype=float)
+        ax.step(x, need, where="mid", color=p["text2"], linewidth=1.2, linestyle=(0, (4, 3)))
+        ok = np.array([bool(r.get("ok")) for r in rows])
+        ax.scatter(x[~ok], y[~ok], s=46, facecolors=p["surface"], edgecolors=p["accent"], linewidths=2, zorder=3)
+        ax.scatter(x[ok], y[ok], s=60, color=p["good"], edgecolors=p["surface"], linewidths=2, zorder=4)
+        ax.axhline(0, color=p["axis"], linewidth=1)
+        ax.text(x[-1], need[-1], " chegara %.2f" % need[-1], va="bottom", ha="right", fontsize=8, color=p["text2"])
+        ax.set_xlabel("Urinish №", color=p["muted"], fontsize=9)
+        ax.set_ylabel("Holdout t", color=p["muted"], fontsize=9)
+        ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
+        self.add_hover(x, np.nan_to_num(y), lambda i: "Urinish %d: %s\nholdout t=%s, kutilma %s\nchegara t ≥ %.2f" % (
+            rows[i]["no"], "✓ o'tdi" if rows[i].get("ok") else "✕ o'tmadi",
+            "—" if rows[i].get("t") is None else "%.2f" % rows[i]["t"],
+            "—" if rows[i].get("exp") is None else "%+.3fR" % rows[i]["exp"], rows[i].get("need_t", 1.0)))
+        self.finish()

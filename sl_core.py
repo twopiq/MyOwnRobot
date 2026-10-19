@@ -104,6 +104,9 @@ class Cfg:
     repeat: int = 1                 # necha marta (yangi seed bilan) qayta o'rganib ko'riladi
     trials: int = 1                 # darvoza qattiqlashuvi uchun jami urinishlar soni
     confirm: str = ""               # "fayl|spred|sirpanish;fayl2|spred2" — boshqa instrumentlarda tasdiqlash
+    attempt: int = 0                # shu ma'lumotdagi urinish tartibi (0 — birinchi); dvigatellar variantni shunga qarab tanlaydi
+    forever: bool = False           # --learn: darvozadan o'tguncha (yoki to'xtatilguncha) uzluksiz qayta o'rganish
+    until_pass: bool = True         # jonli: strategiya o'tmagan bo'lsa SL_RELEARN_HOURS kutmasdan darhol qayta o'rganish
     # --- jonli himoya
     kill_window: int = 20           # oxirgi N jonli bitim
     kill_sum_r: float = -6.0        # yig'indi R shundan past bo'lsa — to'xtab, qayta o'rganadi
@@ -147,6 +150,8 @@ class Cfg:
         c.repeat = max(1, env_i("SL_REPEAT", c.repeat))
         c.trials = max(1, env_i("SL_TRIALS", c.trials))
         c.confirm = _env("SL_CONFIRM", c.confirm)
+        c.forever = env_b("SL_FOREVER", c.forever)
+        c.until_pass = env_b("SL_LEARN_UNTIL_PASS", c.until_pass)
         c.kill_window = env_i("SL_KILL_WINDOW", c.kill_window)
         c.kill_sum_r = env_f("SL_KILL_SUM_R", c.kill_sum_r)
         return c

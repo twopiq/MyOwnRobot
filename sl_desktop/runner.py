@@ -21,6 +21,7 @@ def robot_command(args: List[str]) -> List[str]:
 class RobotProcess(QObject):
     line = Signal(str)
     progress = Signal(dict)
+    attempt = Signal(dict)               # @@ATTEMPT: bitta urinish natijasi (uzluksiz o'rganishda)
     started = Signal()
     finished = Signal(int, str)          # chiqish kodi, oxirgi muhim qator
 
@@ -83,6 +84,12 @@ class RobotProcess(QObject):
             self._handle(ln)
 
     def _handle(self, ln: str) -> None:
+        if ln.startswith("@@ATTEMPT "):
+            try:
+                self.attempt.emit(json.loads(ln[len("@@ATTEMPT "):]))
+            except ValueError:
+                pass
+            return
         if ln.startswith("@@PROGRESS "):
             try:
                 self.progress.emit(json.loads(ln[len("@@PROGRESS "):]))

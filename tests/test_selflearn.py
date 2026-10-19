@@ -456,10 +456,10 @@ def test_learn_repeat_uses_new_seeds_and_stops_on_first_pass(tmp_path, hist, mon
             return sc.Report(mode="genetic", ok=len(calls) == 3)
 
     monkeypatch.setattr(sr, "load_engine", lambda c: Dummy(c))
-    eng, rep = sr.learn_repeat(sc.Cfg(seed=7, repeat=5), hist)
+    eng, rep = sr.learn_repeat(sc.Cfg(seed=7, repeat=5, state_dir=str(tmp_path / "a")), hist)
     assert calls == [(7, 5), (8, 5), (9, 5)] and rep.ok and rep.extra["attempt"] == "3/5"
     calls.clear()
-    eng, rep = sr.learn_repeat(sc.Cfg(seed=1, repeat=2), hist)
+    eng, rep = sr.learn_repeat(sc.Cfg(seed=1, repeat=2, state_dir=str(tmp_path / "b")), hist)
     assert len(calls) == 2 and not rep.ok
 
 
@@ -474,3 +474,47 @@ def test_broker_passes_terminal_path_and_checks_login():
     seen.clear()
     sc.Broker(sc.Cfg(), m).connect()
     assert seen == {}
+
+
+def test_attempts_persist_and_forever_loop(tmp_path, hist, monkeypatch):
+    """Har bosish yangi seed bilan davom etadi (natija takrorlanmaydi), darvoza jami urinishlar bo'yicha qattiqlashadi;
+    uzluksiz rejim o'tguncha davom etadi va stop.flag bilan to'xtaydi."""
+    import selflearn_robot as sr
+    calls = []
+    passes = set()
+
+    class Dummy:
+        def __init__(self, cfg):
+            self.cfg = cfg
+
+        def load(self):
+            return False
+
+        def learn(self, h):
+            calls.append((self.cfg.seed, self.cfg.trials, self.cfg.attempt))
+            return sc.Report(mode="genetic", ok=self.cfg.attempt in passes)
+
+    monkeypatch.setattr(sr, "load_engine", lambda c: Dummy(c))
+    cfg = sc.Cfg(seed=7, state_dir=str(tmp_path))
+    sr.learn_repeat(cfg, hist)
+    sr.learn_repeat(cfg, hist)                                  # ikkinchi bosish: yangi seed, 2 urinish hisobida
+    assert calls == [(7, 1, 0), (8, 2, 1)] and sr.attempts_done(cfg, hist) == 2
+    calls.clear()
+    passes.add(4)
+    eng, rep = sr.learn_repeat(cfg, hist, forever=True)
+    assert [c[2] for c in calls] == [2, 3, 4] and [c[1] for c in calls] == [3, 4, 5] and rep.ok
+    assert rep.extra["attempt_no"] == 5 and rep.extra["min_t"] > 1.0
+    calls.clear()
+    seen = []
+    (tmp_path / "stop.flag").write_text("1")
+    sr.learn_repeat(cfg, hist, forever=True, on_attempt=lambda e, r: seen.append(r.extra["attempt_no"]))
+    assert seen == [6] and not (tmp_path / "stop.flag").exists()
+
+
+def test_ml_attempts_try_different_configs():
+    import sl_ml
+    base = sl_ml.attempt_config(sc.Cfg(seed=7, attempt=0), 1.5, 1.5, 32)
+    assert base[:3] == (1.5, 1.5, 32) and base[3] == sl_ml.DEFAULT_HP
+    variants = {sl_ml.attempt_config(sc.Cfg(seed=7 + k, attempt=k), 1.5, 1.5, 32)[:3] for k in range(1, 12)}
+    assert len(variants) >= 5
+    assert sl_ml.attempt_config(sc.Cfg(seed=9, attempt=2), 1.5, 1.5, 32) == sl_ml.attempt_config(sc.Cfg(seed=9, attempt=2), 1.5, 1.5, 32)

@@ -225,8 +225,9 @@ class GitHubSource(Source):
             if self.token:
                 return UpdateError(f"Token \"{self.repo}\" repozitoriyini ko'ra olmaydi yoki reliz yo'q "
                                    "(GitHub 404). " + TOKEN_HELP)
-            return UpdateError(f"\"{self.repo}\" repozitoriyida yangilanish fayli topilmadi (GitHub 404). "
-                               "Repozitoriy nomini tekshiring (egasi/nomi); yopiq repozitoriy bo'lsa token kiriting.")
+            return UpdateError(f"\"{self.repo}\" da hali yangilanish relizi yo'q (GitHub 404). Reliz `main` ga versiya "
+                               "oshirilgan birlashtirishdan keyin avtomatik chiqadi. Repozitoriy nomini tekshiring "
+                               "(egasi/nomi); yopiq repozitoriy bo'lsa token kiriting.")
         return UpdateError(f"GitHub xatosi ({code}). Keyinroq urinib ko'ring.")
 
     def _asset_urls(self) -> dict[str, str]:

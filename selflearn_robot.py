@@ -64,22 +64,77 @@ def build_history(cfg: sc.Cfg, br: Optional[sc.Broker] = None) -> pd.DataFrame:
     return sc.limit_years(df, cfg.history_years)
 
 
-def learn_repeat(cfg: sc.Cfg, hist: pd.DataFrame, base: Any = None):
-    """Yangi seed bilan cfg.repeat marta o'rganadi; ko'p urinish — darvoza Bonferroni bo'yicha qattiqlashadi.
-    Birinchi o'tgan urinishda to'xtaydi. Qaytaradi: (dvigatel, hisobot)."""
+def _data_key(cfg: sc.Cfg, hist: pd.DataFrame) -> str:
+    """Urinishlar hisobi kaliti: rejim, instrument, TF, xarajatlar va tarix boshi. Tarix oxiri kalitga kirmaydi —
+    yangi shamlar qo'shilganda ham hisob davom etadi (bir xil ma'lumot qayta-qayta "sinab ko'rilmoqda")."""
+    first = str(hist.index[0]) if len(hist) else ""
+    return "%s|%s|%s|%s|%.5f|%.5f" % (cfg.mode, cfg.symbol, cfg.tf, first, cfg.spread, cfg.slippage)
+
+
+def attempts_done(cfg: sc.Cfg, hist: pd.DataFrame) -> int:
+    try:
+        d = json.loads(sc.state_path(cfg, "attempts.json").read_text(encoding="utf-8"))
+        return int(d.get(_data_key(cfg, hist), 0))
+    except (OSError, ValueError):
+        return 0
+
+
+def _save_attempts(cfg: sc.Cfg, hist: pd.DataFrame, n: int) -> None:
+    p = sc.state_path(cfg, "attempts.json")
+    try:
+        d = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        d = {}
+    d[_data_key(cfg, hist)] = n
+    try:
+        sc.write_json(p, d)
+    except OSError:
+        pass
+
+
+def learn_repeat(cfg: sc.Cfg, hist: pd.DataFrame, base: Any = None, forever: Optional[bool] = None,
+                 on_attempt: Any = None):
+    """Yangi seed va variant bilan qayta-qayta o'rganadi; birinchi o'tgan urinishda to'xtaydi.
+
+    Urinishlar shu ma'lumot uchun state/attempts.json da hisoblanadi (tugmani qayta bosish ham, ilovani qayta ochish ham
+    hisobni davom ettiradi). Har urinish yangi seed oladi — natija takrorlanmaydi; darvozaning t-chegarasi esa
+    jami urinishlar soniga qarab Bonferroni bo'yicha qattiqlashadi (ko'p urinishda tasodifiy "omad" o'tib ketmasligi uchun).
+    forever=True: cfg.repeat e'tiborsiz, o'tguncha yoki state/stop.flag paydo bo'lguncha davom etadi.
+    Qaytaradi: (dvigatel, hisobot)."""
+    forever = cfg.forever if forever is None else forever
+    done = attempts_done(cfg, hist)
     n = max(1, cfg.repeat)
+    stop = sc.state_path(cfg, "stop.flag")
     last: Optional[tuple] = None
-    for k in range(n):
-        c = dataclasses.replace(cfg, seed=cfg.seed + k, trials=max(cfg.trials, n))
+    k = 0
+    while True:
+        j = done + k + 1                                         # shu ma'lumotdagi jami urinish raqami
+        trials = max(cfg.trials, j if forever else done + n)
+        c = dataclasses.replace(cfg, seed=cfg.seed + done + k, trials=trials, attempt=done + k)
         eng = load_engine(c)
         eng.load()
-        cb = progress_printer(k, n)
+        cb = progress_printer(k, 0 if forever else n)
         rep = eng.learn(hist, progress=cb) if cb else eng.learn(hist)
-        rep.extra["attempt"] = "%d/%d" % (k + 1, n)
-        if n > 1:
-            sc.log("urinish %d/%d (seed %d): %s" % (k + 1, n, c.seed, "O'TDI" if rep.ok else "o'tmadi"))
+        rep.extra["attempt"] = ("%d" % j) if forever else "%d/%d" % (k + 1, n)
+        rep.extra["attempt_no"] = j
+        rep.extra["min_t"] = round(sc.eff_min_t(c), 3)
+        _save_attempts(cfg, hist, j)
+        te = rep.segments.get("test") or {}
+        sc.log("urinish %d (seed %d, t chegarasi %.2f): %s%s" % (
+            j, c.seed, sc.eff_min_t(c), "O'TDI" if rep.ok else "o'tmadi",
+            (" — holdout %+.3fR, t=%.2f" % (te.get("exp", 0), te.get("t", 0))) if te else ""))
+        if sc.env_b("SL_PROGRESS", False):
+            print("@@ATTEMPT " + json.dumps({"no": j, "ok": bool(rep.ok), "exp": te.get("exp"), "t": te.get("t"),
+                                             "n": te.get("n"), "need_t": rep.extra["min_t"]}), flush=True)
+        if on_attempt is not None:
+            on_attempt(eng, rep)
         last = (eng, rep)
-        if rep.ok:
+        k += 1
+        if rep.ok or (not forever and k >= n):
+            break
+        if stop.exists():
+            stop.unlink(missing_ok=True)
+            sc.log("uzluksiz o'rganish to'xtatildi (%d urinish)" % j)
             break
     return last
 
@@ -172,7 +227,7 @@ class Learner:
         def work() -> None:
             try:
                 sc.log("O'RGANISH boshlandi [%s]: %d sham" % (self.cfg.mode, len(hist)))
-                cand, rep = learn_repeat(self.cfg, hist)      # mavjud strategiya yangisi o'tmasa saqlanib qoladi
+                cand, rep = learn_repeat(self.cfg, hist, forever=False)   # mavjud strategiya yangisi o'tmasa qoladi
                 sc.save_report(self.cfg, rep, hist)
                 self.result = (cand, rep)
             except Exception as e:  # noqa: BLE001
@@ -326,8 +381,9 @@ def on_new_bar(cfg: sc.Cfg, br: sc.Broker, eng: Any, st: LiveState, learner: Lea
         if not learner.busy:
             learner.start(build_history(cfg, br))
             st.last_learn = time.time()
-    # 3) rejalashtirilgan qayta o'rganish
-    if not learner.busy and time.time() - st.last_learn > cfg.relearn_hours * 3600:
+    # 3) rejalashtirilgan qayta o'rganish; tekshirilgan strategiya yo'q bo'lsa — kutmasdan, uzluksiz qayta o'rganish
+    need = (not eng.ready()) or (cfg.require_pass and not eng.validated) or st.paused
+    if not learner.busy and (time.time() - st.last_learn > cfg.relearn_hours * 3600 or (cfg.until_pass and need)):
         learner.start(build_history(cfg, br))
         st.last_learn = time.time()
     st.save()
@@ -387,6 +443,8 @@ def main() -> None:
     ap.add_argument("--repeat", type=int, help="necha marta qayta o'rganish (SL_REPEAT); ko'p urinishda darvoza qattiqlashadi")
     ap.add_argument("--confirm", help="tasdiqlovchi instrument fayllari: 'fayl|spred|sirpanish;fayl2|spred2' (SL_CONFIRM)")
     ap.add_argument("--force", action="store_true", help="tekshiruvdan o'tmasa ham saqlash (faqat tadqiqot)")
+    ap.add_argument("--forever", action="store_true",
+                    help="darvozadan o'tguncha uzluksiz qayta o'rganish (SL_FOREVER); to'xtatish: state/stop.flag")
     a = ap.parse_args()
     if a.mode:
         os.environ["SL_MODE"] = a.mode
@@ -402,12 +460,17 @@ def main() -> None:
         os.environ["SL_CONFIRM"] = a.confirm
     if a.force:
         os.environ["SL_REQUIRE_PASS"] = "0"
+    if a.forever:
+        os.environ["SL_FOREVER"] = "1"
     cfg = sc.Cfg.from_env()
     if a.learn:
         hist = build_history(cfg, None)
-        eng, rep = learn_repeat(cfg, hist)
-        sc.append_learn_log(cfg, rep)
-        sc.save_report(cfg, rep, hist)
+        sc.state_path(cfg, "stop.flag").unlink(missing_ok=True)
+
+        def each(_eng: Any, r: sc.Report) -> None:          # har urinish jurnalga va hisobotga yoziladi
+            sc.append_learn_log(cfg, r)
+            sc.save_report(cfg, r, hist)
+        eng, rep = learn_repeat(cfg, hist, on_attempt=each)
         print(format_report(rep))
         return
     run_live(cfg)

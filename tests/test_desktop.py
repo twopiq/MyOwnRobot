@@ -140,3 +140,24 @@ def test_error_panel_copies_full_report(tmp_path, monkeypatch):
     clip = QApplication.clipboard().text()
     assert "Chiqish kodi: 1" in clip and "O'RGANISH boshlandi" in clip and "SL_MODE=" in clip
     w.close()
+
+
+def test_learn_page_shows_attempts_in_forever_mode(tmp_path, monkeypatch):
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    from sl_desktop.app import MainWindow
+    from sl_desktop.settings import Settings
+    app = QApplication.instance() or QApplication([])
+    w = MainWindow(Settings(tmp_path / "s.json", state=tmp_path / "st"))
+    lp = w.pages["learn"]
+    assert lp.forever.isChecked() and not lp.repeat.isEnabled()
+    lp._reset_progress()
+    for i, (t, ok) in enumerate([(0.4, False), (1.2, False), (2.3, True)], 1):
+        lp._on_attempt({"no": i, "ok": ok, "t": t, "exp": 0.02 * i, "n": 80, "need_t": 1.0 + 0.3 * i})
+    assert lp.achart.isVisibleTo(lp) and "Urinish 3" in lp.step_lbl.text() and "2.30" in lp.step_lbl.text()
+    (tmp_path / "st").mkdir(exist_ok=True)
+    (tmp_path / "st" / "attempts.json").write_text(json.dumps({"genetic|XAUUSD|M15|2022-01-03 00:00:00|0.30000|0.05000": 4}))
+    lp._budget_changed()
+    assert lp.attempts_done() == 4 and "4 urinish" in lp.done_lbl.text()
+    w.close()

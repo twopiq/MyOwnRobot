@@ -23,6 +23,16 @@ Har dvigatel faqat `sl_core.py` (tarix, indikator, simulyator, MT5 qatlami) dan 
 * **Qabul darvozasi**: holdout'da kamida 40 bitim, kutilma ≥ +0.05R, PF ≥ 1.10, t ≥ 1.0, validatsiya va train foydali, holdout choraklarining ≥ 50% foydali. O'tmasa robot **savdo qilmaydi** (`SL_REQUIRE_PASS=0` faqat tadqiqot uchun).
 * Jonli himoya: oxirgi 20 bitim yig'indisi ≤ −6R bo'lsa to'xtab qayta o'rganadi; kunlik zarar limiti; keng spredda kirmaydi; risk % bo'yicha lot.
 
+## Uzluksiz o'rganish (`--forever`, ilovada «♾ Uzluksiz»)
+* Robot darvozadan o'tguncha (yoki to'xtatilguncha) qayta-qayta o'rganadi; har urinish **yangi seed va variant** bilan
+  (ML: boshqa SL/TP/ushlash muddati va XGBoost parametrlari; genetic/optimizer: boshqa qidiruv yo'li).
+* Urinishlar shu ma'lumot (rejim, simvol, TF, xarajatlar, tarix boshi) uchun `state/attempts.json` da hisoblanadi —
+  tugmani qayta bosish yoki ilovani qayta ochish hisobni davom ettiradi, natija takrorlanmaydi.
+* Darvozaning t-chegarasi jami urinishlar soniga qarab Bonferroni bo'yicha oshadi (1: 1.00, 10: 2.15, 50: 2.73) —
+  yuzlab urinishda tasodifan "o'tib ketgan" strategiya savdoga chiqmasligi uchun.
+* Jonli rejimda tekshirilgan strategiya bo'lmasa (yoki kill-switch ishlasa) robot `SL_RELEARN_HOURS` ni kutmasdan darhol
+  qayta o'rganadi (`SL_LEARN_UNTIL_PASS=1`, standart). To'xtatish: `state/stop.flag`.
+
 ## Qayta-qayta o'rganish va tasdiqlash (`--repeat`, `--confirm`)
 * `--repeat N` (yoki `SL_REPEAT=N`): robot yangi `seed` bilan N marta qayta o'rganadi, birinchi o'tgan urinishda to'xtaydi.
   Urinish ko'p bo'lsa tasodifan "o'tib ketish" ehtimoli oshadi, shuning uchun holdout `t` chegarasi **Bonferroni bo'yicha qattiqlashadi**
@@ -116,8 +126,8 @@ faqat o'qish huquqli token):
   dastur yopilgach PowerShell skript papkani almashtirib, qayta ochadi;
 * yangi kod ishga tushmasa u `BROKEN` deb belgilanadi va oldingi versiya ishlatiladi; yangilangandan keyin "Nima yangi" oynasi.
 
-Reliz: `sl_desktop/__init__.py` dagi `__version__` ni oshiring va commit xabariga `[release]` yozing (yoki `v*` teg qo'ying) —
-CI `.exe`, `update.json` va `myownrobot_app-<versiya>.zip` ni GitHub Release'ga joylaydi. Qo'lda:
+Reliz: `sl_desktop/__init__.py` dagi `__version__` ni oshiring va `main` ga birlashtiring — `v<versiya>` tegi hali bo'lmasa CI
+`.exe`, `update.json` va `myownrobot_app-<versiya>.zip` ni GitHub Release'ga avtomatik joylaydi (`[release]` yoki `v*` teg ham ishlaydi). Qo'lda:
 `python tools/release.py publish OUTDIR --full MyOwnRobot_Windows.zip`.
 
 ## Testlar
