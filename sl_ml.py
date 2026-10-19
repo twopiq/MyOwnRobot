@@ -219,6 +219,19 @@ class Engine:
                "test": trades_at(models, te_r, best_thr, te0, te1)}
         rep.segments = {k: sc.stats(v) for k, v in res.items()}
         ok, why = sc.gate(cfg, rep.segments, sc.chunk_exps(res["test"], te0, te1, 4))
+        conf = sc.make_confirm(cfg)
+        if ok and conf:
+            def _ev(d, sp_, sj_):
+                Xd, nd, ad = build_features(sc.Bars.of(d), d.index)
+                bd = sc.Bars.of(d)
+                pl, ps = self._proba(models, Xd)
+                p = np.maximum(pl, ps)
+                dd = np.where(pl >= ps, 1, -1)
+                ix = np.nonzero(p >= best_thr)[0]
+                return sc.simulate(bd, ix, dd[ix], self.sl * ad[ix], self.sl * self.rr * ad[ix], self.hold, sp_, sj_)
+            ok2, why2, info = conf(_ev)
+            ok, why = ok and ok2, why + why2
+            rep.extra["confirm"] = info
         rep.ok, rep.reasons = ok, why
         keep = ok or (not cfg.require_pass and not self.ready())
         if keep:

@@ -23,6 +23,20 @@ Har dvigatel faqat `sl_core.py` (tarix, indikator, simulyator, MT5 qatlami) dan 
 * **Qabul darvozasi**: holdout'da kamida 40 bitim, kutilma ≥ +0.05R, PF ≥ 1.10, t ≥ 1.0, validatsiya va train foydali, holdout choraklarining ≥ 50% foydali. O'tmasa robot **savdo qilmaydi** (`SL_REQUIRE_PASS=0` faqat tadqiqot uchun).
 * Jonli himoya: oxirgi 20 bitim yig'indisi ≤ −6R bo'lsa to'xtab qayta o'rganadi; kunlik zarar limiti; keng spredda kirmaydi; risk % bo'yicha lot.
 
+## Qayta-qayta o'rganish va tasdiqlash (`--repeat`, `--confirm`)
+* `--repeat N` (yoki `SL_REPEAT=N`): robot yangi `seed` bilan N marta qayta o'rganadi, birinchi o'tgan urinishda to'xtaydi.
+  Urinish ko'p bo'lsa tasodifan "o'tib ketish" ehtimoli oshadi, shuning uchun holdout `t` chegarasi **Bonferroni bo'yicha qattiqlashadi**
+  (1 urinish: t ≥ 1.0, 5 urinish: ≥ 1.86, 10 urinish: ≥ 2.1). Jonli rejimda ham `SL_REPEAT` ishlaydi.
+* `--confirm "fayl|spred|sirpanish;fayl2|spred2"` (yoki `SL_CONFIRM`): nomzod strategiya **boshqa instrumentlarda** (masalan XAGUSD, EURUSD M15 tarixi)
+  ham foydali bo'lishi kerak (kamida yarmida, har birida ≥20 bitim, kutilma > 0). Xususiyatlar ATR ga nisbatan, shuning uchun instrumentga bog'liq emas;
+  xarajat har instrument uchun alohida beriladi. Haqiqiy qonuniyat hamma joyda ishlaydi, tasodif ishlamaydi.
+  ```
+  python selflearn_robot.py --learn --mode genetic --history data/XAUUSD_M15.csv --repeat 5 ^
+     --confirm "data/XAGUSD_M15.csv|0.03|0.01;data/EURUSD_M15.csv|0.00012|0.00003"
+  ```
+* Real XAUUSD M15 da `--repeat 5` (optimizer) va `--repeat 4` (genetic) ham darvozadan o'tmadi — takrorlash tasodifiy "foyda"ni o'tkazib yubormadi.
+* Eng ishonchli tekshiruv — yangi strategiyani demo hisobda 1–2 oy kichik riskda ishlatib ko'rish (tarixga tegmaydigan yagona sinov).
+
 ## Haqiqiy tarixdagi natija (XAUUSD M15, 2022-01 … 2026-10, ~113 ming sham) — halol hisobot
 Uchala rejim ham o'rganish davrida chiroyli ko'rinadi, lekin tegilmagan davrda ustunlik yo'q — darvoza hammasini rad etdi:
 
@@ -55,7 +69,7 @@ Foyda kafolati yo'q; robot faqat demo uchun.
 `SL_MODE`, `SL_HISTORY`, `SL_HISTORY_GMT`, `SL_HISTORY_YEARS`, `SL_TF`, `SL_RISK_PCT` (0.5), `SL_SPREAD` (0.30), `SL_SLIPPAGE` (0.05),
 `SL_MAX_SPREAD` (0.80), `SL_MAX_POS` (1), `SL_MAGIC`, `SL_RELEARN_HOURS` (168), `SL_BUDGET_SEC` (240), `SL_REQUIRE_PASS` (1),
 `SL_DEMO_ONLY` (1), `SL_SEED`, `SL_MAX_DAILY_LOSS_PCT` (3), `SL_KILL_WINDOW`/`SL_KILL_SUM_R`, darvoza: `SL_MIN_TEST_TRADES`,
-`SL_MIN_EXP_R`, `SL_MIN_PF`, `SL_MIN_T`, `SL_MIN_POS_CHUNKS`; `SL_OPT_SAMPLES`; ML: `SL_ML_SL`, `SL_ML_RR`, `SL_ML_HOLD`.
+`SL_MIN_EXP_R`, `SL_MIN_PF`, `SL_MIN_T`, `SL_MIN_POS_CHUNKS`; `SL_REPEAT`, `SL_TRIALS`, `SL_CONFIRM`; `SL_OPT_SAMPLES`; ML: `SL_ML_SL`, `SL_ML_RR`, `SL_ML_HOLD`.
 Telegram: `TELEGRAM_ENABLED`, `TG_BOT_TOKEN`, `TG_CHAT_ID` (Robot No.1 o'zi beradi).
 
 ## Testlar

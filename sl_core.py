@@ -87,6 +87,10 @@ class Cfg:
     min_pf: float = 1.10
     min_t: float = 1.0
     min_pos_chunks: float = 0.5     # holdout bo'laklarining nechtasi foydali bo'lishi kerak
+    # --- ko'p urinish / tasdiqlovchi instrumentlar
+    repeat: int = 1                 # necha marta (yangi seed bilan) qayta o'rganib ko'riladi
+    trials: int = 1                 # darvoza qattiqlashuvi uchun jami urinishlar soni
+    confirm: str = ""               # "fayl|spred|sirpanish;fayl2|spred2" — boshqa instrumentlarda tasdiqlash
     # --- jonli himoya
     kill_window: int = 20           # oxirgi N jonli bitim
     kill_sum_r: float = -6.0        # yig'indi R shundan past bo'lsa — to'xtab, qayta o'rganadi
@@ -124,6 +128,9 @@ class Cfg:
         c.min_pf = env_f("SL_MIN_PF", c.min_pf)
         c.min_t = env_f("SL_MIN_T", c.min_t)
         c.min_pos_chunks = env_f("SL_MIN_POS_CHUNKS", c.min_pos_chunks)
+        c.repeat = max(1, env_i("SL_REPEAT", c.repeat))
+        c.trials = max(1, env_i("SL_TRIALS", c.trials))
+        c.confirm = _env("SL_CONFIRM", c.confirm)
         c.kill_window = env_i("SL_KILL_WINDOW", c.kill_window)
         c.kill_sum_r = env_f("SL_KILL_SUM_R", c.kill_sum_r)
         return c
@@ -451,6 +458,14 @@ def split_ranges(n: int, ratios: Tuple[float, float, float] = (0.6, 0.2, 0.2)) -
     return {"train": (0, a), "val": (a, b), "test": (b, n)}
 
 
+def eff_min_t(cfg: Cfg) -> float:
+    """Urinishlar soni N bo'lsa, t chegarasi Bonferroni bo'yicha oshadi: P(z>t) = 0.1587 / N (N=1 da t=1)."""
+    if cfg.trials <= 1:
+        return cfg.min_t
+    from statistics import NormalDist
+    return max(cfg.min_t, NormalDist().inv_cdf(1.0 - 0.1587 / cfg.trials))
+
+
 def gate(cfg: Cfg, seg: Dict[str, Dict[str, float]], test_chunks: List[float]) -> Tuple[bool, List[str]]:
     """Strategiyani jonli savdoga qo'yish uchun qabul darvozasi: tegilmagan holdout davrida foydali bo'lishi shart."""
     why: List[str] = []
@@ -461,8 +476,9 @@ def gate(cfg: Cfg, seg: Dict[str, Dict[str, float]], test_chunks: List[float]) -
         why.append("holdout kutilma %.3fR < %.3fR" % (te.get("exp", 0), cfg.min_exp_r))
     if te.get("pf", 0) < cfg.min_pf:
         why.append("holdout PF %.2f < %.2f" % (te.get("pf", 0), cfg.min_pf))
-    if te.get("t", 0) < cfg.min_t:
-        why.append("holdout t=%.2f < %.2f" % (te.get("t", 0), cfg.min_t))
+    mt = eff_min_t(cfg)
+    if te.get("t", 0) < mt:
+        why.append("holdout t=%.2f < %.2f%s" % (te.get("t", 0), mt, " (%d urinish uchun qattiqlashtirilgan)" % cfg.trials if cfg.trials > 1 else ""))
     if va and va.get("exp", 0) <= 0:
         why.append("validatsiya foydasiz (%.3fR)" % va.get("exp", 0))
     if tr and tr.get("exp", 0) <= 0:
@@ -472,6 +488,38 @@ def gate(cfg: Cfg, seg: Dict[str, Dict[str, float]], test_chunks: List[float]) -
         if share < cfg.min_pos_chunks:
             why.append("holdout bo'laklarining faqat %.0f%% foydali" % (share * 100))
     return (not why), why
+
+
+def parse_confirm(spec: str, cfg: Cfg) -> List[Tuple[str, float, float]]:
+    out = []
+    for part in [x for x in spec.split(";") if x.strip()]:
+        f = [x.strip() for x in part.split("|")]
+        out.append((f[0], float(f[1]) if len(f) > 1 and f[1] else cfg.spread, float(f[2]) if len(f) > 2 and f[2] else cfg.slippage))
+    return out
+
+
+def make_confirm(cfg: Cfg) -> Optional[Callable[[Callable[..., Trades]], Tuple[bool, List[str], Dict[str, Any]]]]:
+    """Boshqa instrumentlarda (tarix fayllari) tasdiqlash: nomzod strategiya ularda ham foydali bo'lishi kerak (kamida yarmida).
+    Xususiyatlar ATR ga nisbatan — instrumentga bog'liq emas; xarajat har instrument uchun alohida (spred|sirpanish)."""
+    sets = parse_confirm(cfg.confirm, cfg)
+    if not sets:
+        return None
+    cache: Dict[str, pd.DataFrame] = {}
+
+    def run(evalfn: Callable[..., Trades]) -> Tuple[bool, List[str], Dict[str, Any]]:
+        res, pos = {}, 0
+        for path, sp, sj in sets:
+            if path not in cache:
+                cache[path] = to_tf(read_history_file(path, cfg.history_gmt), cfg.tf_min)
+            s = stats(evalfn(cache[path], sp, sj))
+            good = s["n"] >= 20 and s["exp"] > 0 and s["t"] > 0
+            pos += good
+            res[Path(path).name] = {"n": s["n"], "exp": round(s["exp"], 3), "t": round(s["t"], 2), "ok": bool(good)}
+        need = (len(sets) + 1) // 2
+        why = [] if pos >= need else ["tasdiqlovchi instrumentlarda foydali: %d/%d (kerak ≥ %d): %s" % (
+            pos, len(sets), need, "; ".join("%s %+.3fR" % (k, v["exp"]) for k, v in res.items()))]
+        return pos >= need, why, res
+    return run
 
 
 def fmt_stats(s: Dict[str, float]) -> str:

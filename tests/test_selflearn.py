@@ -393,3 +393,71 @@ def test_robot_main_cli_learn_offline(tmp_path, hist):
                          capture_output=True, text=True, env={**__import__("os").environ, "SL_OPT_SAMPLES": "15"})
     assert out.returncode == 0, out.stderr[-800:]
     assert "DARVOZA" in out.stdout and (tmp_path / "st" / "learn_log.jsonl").exists()
+
+
+# ---------------------------------------------------------------- ko'p urinish va tasdiqlash
+
+def test_gate_tightens_with_number_of_trials():
+    good = {"n": 100, "exp": 0.2, "pf": 1.4, "t": 1.5}
+    c1 = sc.Cfg(trials=1)
+    c10 = sc.Cfg(trials=10)
+    assert sc.eff_min_t(c1) == 1.0 and sc.eff_min_t(c10) > 2.0 > sc.eff_min_t(sc.Cfg(trials=2)) > 1.0
+    assert sc.gate(c1, {"test": good, "val": good, "train": good}, [0.1] * 4)[0]
+    ok, why = sc.gate(c10, {"test": good, "val": good, "train": good}, [0.1] * 4)
+    assert not ok and "qattiqlashtirilgan" in why[0]
+
+
+def test_parse_confirm_handles_windows_paths():
+    c = sc.Cfg(spread=0.3, slippage=0.05)
+    out = sc.parse_confirm(r"C:\data\xag.csv|0.02|0.005;D:\e.csv", c)
+    assert out == [(r"C:\data\xag.csv", 0.02, 0.005), (r"D:\e.csv", 0.3, 0.05)]
+
+
+def _planted(seed, n=70_000):
+    r = np.random.default_rng(seed)
+    idx = pd.date_range("2022-01-03", periods=n, freq="15min")
+    c = np.empty(n)
+    c[0] = 1800
+    ret = r.normal(0, 1.0, n)
+    for i in range(1, n):
+        c[i] = c[i - 1] + ret[i] + (0.9 if (i > 6 and c[i - 1] - c[i - 6] < -4.0) else 0.0)
+    o = np.concatenate([[c[0]], c[:-1]])
+    return pd.DataFrame({"open": o, "high": np.maximum(o, c) + 0.3, "low": np.minimum(o, c) - 0.3, "close": c, "volume": 100.0}, index=idx)
+
+
+def test_confirmation_instrument_accepts_same_law_and_rejects_noise(tmp_path):
+    import sl_genetic as g
+    same, noise = _planted(11), synth(40_000, seed=9)
+    same.to_csv(tmp_path / "same.csv", index_label="time")
+    noise.to_csv(tmp_path / "noise.csv", index_label="time")
+    main = _planted(5)
+    ok_cfg = cfg_for("genetic", tmp_path / "a", require_pass=True, min_test_trades=20, confirm=f"{tmp_path / 'same.csv'}|0.3|0.05")
+    e = g.Engine(ok_cfg)
+    rep = e.learn(main, budget=60, pop=60, max_gen=40)
+    assert rep.ok and rep.extra["confirm"]["same.csv"]["ok"], rep.extra
+    bad_cfg = cfg_for("genetic", tmp_path / "b", require_pass=True, min_test_trades=20, confirm=f"{tmp_path / 'noise.csv'}")
+    rep2 = g.Engine(bad_cfg).learn(main, budget=60, pop=60, max_gen=40)
+    assert not rep2.ok and any("tasdiqlovchi" in w for w in rep2.reasons) and not rep2.deployed
+
+
+def test_learn_repeat_uses_new_seeds_and_stops_on_first_pass(tmp_path, hist, monkeypatch):
+    import selflearn_robot as sr
+    calls = []
+
+    class Dummy:
+        def __init__(self, cfg):
+            self.cfg = cfg
+
+        def load(self):
+            return False
+
+        def learn(self, h):
+            calls.append((self.cfg.seed, self.cfg.trials))
+            return sc.Report(mode="genetic", ok=len(calls) == 3)
+
+    monkeypatch.setattr(sr, "load_engine", lambda c: Dummy(c))
+    eng, rep = sr.learn_repeat(sc.Cfg(seed=7, repeat=5), hist)
+    assert calls == [(7, 5), (8, 5), (9, 5)] and rep.ok and rep.extra["attempt"] == "3/5"
+    calls.clear()
+    eng, rep = sr.learn_repeat(sc.Cfg(seed=1, repeat=2), hist)
+    assert len(calls) == 2 and not rep.ok
