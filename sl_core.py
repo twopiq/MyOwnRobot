@@ -33,6 +33,16 @@ _ALIASES = {"gen": "genetic", "genetic": "genetic", "ga": "genetic", "evolution"
 WARMUP = 300          # indikatorlar "isishi" uchun birinchi shamlar signal bermaydi
 
 
+def force_utf8_stdio() -> None:
+    """stdout/stderr ni UTF-8 ga o'tkazadi. Windows'da konsol cp1252 bo'ladi va "≥", "×" kabi belgilar
+    UnicodeEncodeError beradi; yig'ilgan .exe da PYTHONIOENCODING ham e'tiborsiz qoladi."""
+    for s in (sys.stdout, sys.stderr):
+        try:
+            s.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass                      # None (oynali .exe) yoki qayta sozlab bo'lmaydigan oqim
+
+
 def log(msg: str) -> None:
     print(time.strftime("%H:%M:%S"), msg, flush=True)
 
