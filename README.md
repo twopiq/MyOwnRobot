@@ -51,7 +51,7 @@ himoya bor. Boshqa tarix (boshqa instrument/TF), ko'proq xususiyat, `SL_SPREAD` 
 Foyda kafolati yo'q; robot faqat demo uchun.
 
 ## O'rnatish
-1. `python -m venv .venv_bot && .venv_bot\Scripts\pip install -r requirements.txt` (Python 3.12).
+1. `python -m venv .venv_bot && .venv_bot\Scripts\pip install -r requirements.txt` (Python 3.12). Keyin `run_desktop.bat` — grafik ilova.
 2. Oflayn tadqiqot (MT5 kerak emas):
    ```
    python selflearn_robot.py --learn --mode genetic   --history data/XAUUSD_M15.csv
@@ -80,6 +80,31 @@ Robot No.1 orqali ishga tushirilsa bu sozlamalar kerak emas — dastur har slotn
 `SL_DEMO_ONLY` (1), `SL_SEED`, `SL_MAX_DAILY_LOSS_PCT` (3), `SL_KILL_WINDOW`/`SL_KILL_SUM_R`, darvoza: `SL_MIN_TEST_TRADES`,
 `SL_MIN_EXP_R`, `SL_MIN_PF`, `SL_MIN_T`, `SL_MIN_POS_CHUNKS`; `SL_TERMINAL`, `SL_LOGIN`, `SL_PORTABLE`, `SL_REPEAT`, `SL_TRIALS`, `SL_CONFIRM`; `SL_OPT_SAMPLES`; ML: `SL_ML_SL`, `SL_ML_RR`, `SL_ML_HOLD`.
 Telegram: `TELEGRAM_ENABLED`, `TG_BOT_TOKEN`, `TG_CHAT_ID` (Robot No.1 o'zi beradi).
+
+## Desktop ilova (Windows / Linux / macOS)
+
+Robotni buyruq satrisiz boshqarish uchun grafik ilova: `python desktop_app.py` (Windows'da `run_desktop.bat`).
+Tayyor `.exe`: GitHub Actions → *Windows build* → `MyOwnRobot_Windows.zip` (yoki `v*` tegidagi reliz).
+
+| Bosh sahifa | Natijalar |
+|---|---|
+| ![Bosh sahifa](docs/screen_dashboard.png) | ![Natijalar](docs/screen_results.png) |
+
+Sahifalar:
+* **Bosh sahifa** — robot holati, *Tarix → O'rganish → Tekshiruv → Savdo* zanjiri, balans/equity, xavf o'lchagichlari
+  (kill-switch, kunlik zarar, spred) va oxirgi strategiyaning kapital egri chizig'i.
+* **O'rganish** — 3 qadam: rejim kartasi, tarix fayli (narx grafigida train/validatsiya/holdout zonalari), vaqt va urinishlar.
+  Jarayon jonli: progress, qolgan vaqt, avlodlar/oynalar bo'yicha baho grafigi, jurnal.
+* **Natijalar** — "O'TDI / O'TMADI" xulosasi oddiy tilda, 6 ta KPI, darvozaning har bir sharti (qiymat va chegara),
+  davrlar bo'yicha o'rtacha natija, kapital egri chizig'i, oylik natija, topilgan qoidalar o'qiladigan ko'rinishda.
+* **Jonli savdo** — MT5 terminali/hisob, risk, ▶/■; balans, kunlik natija, ochiq pozitsiyalar, jonli bitimlar R grafigi, jurnal.
+* **Jurnal** — barcha o'rganish sikllari (grafik + jadval), **Sozlamalar** — barcha `SL_*` parametrlar izohlari bilan,
+  yorug'/qorong'i mavzu, **Yordam** — atamalar va infografika.
+
+Ilova robot kodini o'zgartirmaydi: robot alohida jarayonda ishlaydi, ilova uning `@@PROGRESS` qatorlarini
+(`SL_PROGRESS=1`) va `state/` dagi fayllarni o'qiydi: `report_<rejim>.json` (to'liq hisobot: egri chiziqlar, darvoza shartlari),
+`live_status.json` (jonli holat, har 3 s), `learn_log.jsonl`. To'xtatish tugmasi `state/stop.flag` yozadi — robot holatni
+saqlab chiqadi. Sozlamalar `desktop_settings.json` da.
 
 ## Testlar
 `python -m pytest tests -q` (simulyator qo'lda yozilgan etalon bilan mos, lookahead yo'qligi, yashirin qonuniyatni genetik topishi,

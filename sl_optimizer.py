@@ -297,7 +297,8 @@ class Engine:
         params = _idx_params(fam, v)
         last = trades_for(fam, params, I, cfg, lo, hi)
         rep.segments = {"test": stitched[best][1], "train": sc.stats(last)}
-        ok, why = sc.gate(cfg, {"test": rep.segments["test"]}, win_means[best])
+        ok, why = sc.gate(cfg, {"test": rep.segments["test"]}, win_means[best], rep=rep)
+        rep.curves = sc.curves_of({"test": stitched[best][0], "train": last}, hist.index)
         conf = sc.make_confirm(cfg)
         if ok and conf:
             def _ev(d, sp_, sj_):

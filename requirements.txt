@@ -1,7 +1,9 @@
-MetaTrader5
+MetaTrader5; sys_platform == "win32"
 numpy>=2.2.6,<2.3
 pandas>=2.3.2,<3
 joblib
 xgboost
 scikit-learn
 pytest
+PySide6>=6.6
+matplotlib>=3.8

@@ -317,7 +317,8 @@ class Engine:
         res = {k: ens_trades(*seg[k]) for k in ("train", "val", "test")}
         rep.segments = {k: sc.stats(res[k]) for k in res}
         te0, te1 = seg["test"]
-        ok, why = sc.gate(cfg, rep.segments, sc.chunk_exps(res["test"], te0, te1, 4))
+        ok, why = sc.gate(cfg, rep.segments, sc.chunk_exps(res["test"], te0, te1, 4), rep=rep)
+        rep.curves = sc.curves_of(res, hist.index)
         rules = []
         for g in chosen:
             rules.append({"dir": g[0], "sl": g[1], "rr": g[2], "hold": g[3],

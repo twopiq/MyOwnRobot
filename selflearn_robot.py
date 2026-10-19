@@ -73,7 +73,8 @@ def learn_repeat(cfg: sc.Cfg, hist: pd.DataFrame, base: Any = None):
         c = dataclasses.replace(cfg, seed=cfg.seed + k, trials=max(cfg.trials, n))
         eng = load_engine(c)
         eng.load()
-        rep = eng.learn(hist)
+        cb = progress_printer(k, n)
+        rep = eng.learn(hist, progress=cb) if cb else eng.learn(hist)
         rep.extra["attempt"] = "%d/%d" % (k + 1, n)
         if n > 1:
             sc.log("urinish %d/%d (seed %d): %s" % (k + 1, n, c.seed, "O'TDI" if rep.ok else "o'tmadi"))
@@ -81,6 +82,18 @@ def learn_repeat(cfg: sc.Cfg, hist: pd.DataFrame, base: Any = None):
         if rep.ok:
             break
     return last
+
+
+def progress_printer(attempt: int, total: int):
+    """SL_PROGRESS=1 bo'lsa (desktop ilova beradi) dvigatel jarayonini mashina o'qiydigan qatorlar bilan chiqaradi."""
+    if not sc.env_b("SL_PROGRESS", False):
+        return None
+    t0 = time.time()
+
+    def cb(*args: Any) -> None:
+        print("@@PROGRESS " + json.dumps({"attempt": attempt + 1, "of": total, "elapsed": round(time.time() - t0, 1),
+                                          "args": list(args)}, ensure_ascii=False, default=str), flush=True)
+    return cb
 
 
 # ================================================================ hisobot
@@ -160,6 +173,7 @@ class Learner:
             try:
                 sc.log("O'RGANISH boshlandi [%s]: %d sham" % (self.cfg.mode, len(hist)))
                 cand, rep = learn_repeat(self.cfg, hist)      # mavjud strategiya yangisi o'tmasa saqlanib qoladi
+                sc.save_report(self.cfg, rep, hist)
                 self.result = (cand, rep)
             except Exception as e:  # noqa: BLE001
                 sc.log("O'RGANISH xatosi: %s\n%s" % (e, traceback.format_exc()))
@@ -198,8 +212,19 @@ def run_live(cfg: sc.Cfg) -> None:
         st.save()
     last_bar = 0
     day_key, day_eq = "", 0.0
+    stop_flag = sc.state_path(cfg, "stop.flag")
+    stop_flag.unlink(missing_ok=True)
+    last_status = 0.0
     while True:
         try:
+            if stop_flag.exists():
+                stop_flag.unlink(missing_ok=True)
+                sc.log("to'xtatildi (ilova so'rovi)")
+                write_status(cfg, br, eng, st, learner, day_eq, running=False)
+                return
+            if time.time() - last_status >= 3:
+                last_status = time.time()
+                write_status(cfg, br, eng, st, learner, day_eq)
             res = learner.take()
             if res is not None:
                 cand, rep = res
@@ -227,6 +252,32 @@ def run_live(cfg: sc.Cfg) -> None:
         except Exception as e:  # noqa: BLE001
             sc.log("XATO: %s\n%s" % (e, traceback.format_exc()))
             time.sleep(15)
+
+
+def write_status(cfg: sc.Cfg, br: sc.Broker, eng: Any, st: LiveState, learner: Learner, day_eq: float,
+                 running: bool = True) -> None:
+    """Jonli holat -> state/live_status.json (desktop ilova shu faylni o'qib panelni chizadi)."""
+    try:
+        ai = br.mt5.account_info()
+        tk = br.mt5.symbol_info_tick(cfg.symbol)
+        pos = []
+        for p in br.positions():
+            pos.append({"ticket": int(p.ticket), "dir": 1 if int(p.type) == int(br.mt5.POSITION_TYPE_BUY) else -1,
+                        "volume": float(p.volume), "price": float(p.price_open), "sl": float(p.sl), "tp": float(p.tp),
+                        "profit": float(p.profit), "time": int(p.time)})
+        sc.write_json(sc.state_path(cfg, "live_status.json"), {
+            "updated": time.time(), "running": running, "mode": cfg.mode, "symbol": cfg.symbol, "tf": cfg.tf,
+            "login": int(ai.login) if ai else 0, "server": str(ai.server) if ai else "",
+            "currency": str(getattr(ai, "currency", "")) if ai else "",
+            "balance": float(ai.balance) if ai else 0.0, "equity": float(ai.equity) if ai else 0.0, "day_equity": day_eq,
+            "bid": float(tk.bid) if tk else 0.0, "spread": float(tk.ask - tk.bid) if tk else 0.0, "max_spread": cfg.max_spread,
+            "positions": pos, "learning": learner.busy, "ready": bool(eng.ready()), "validated": bool(eng.validated),
+            "strategy": eng.describe() if eng.ready() else "", "paused": st.paused, "rs": st.rs[-60:],
+            "kill_window": cfg.kill_window, "kill_sum_r": cfg.kill_sum_r, "risk_pct": cfg.risk_pct,
+            "max_daily_loss_pct": cfg.max_daily_loss_pct, "require_pass": cfg.require_pass,
+            "last_learn": st.last_learn, "next_learn": st.last_learn + cfg.relearn_hours * 3600})
+    except Exception as e:  # noqa: BLE001
+        sc.log("holat fayli yozilmadi: %s" % e)
 
 
 def _day_state(br: sc.Broker, key: str, eq0: float):
@@ -355,6 +406,7 @@ def main() -> None:
         hist = build_history(cfg, None)
         eng, rep = learn_repeat(cfg, hist)
         sc.append_learn_log(cfg, rep)
+        sc.save_report(cfg, rep, hist)
         print(format_report(rep))
         return
     run_live(cfg)

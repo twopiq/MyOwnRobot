@@ -3,3 +3,6 @@ __pycache__/
 state/
 .pytest_cache/
 .venv/
+desktop_settings.json
+build/
+dist/
