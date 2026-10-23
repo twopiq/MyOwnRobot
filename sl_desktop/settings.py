@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,6 +15,19 @@ def app_dir() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent.parent
+
+
+def user_dir() -> Path:
+    """Sozlamalar va o'rganilgan strategiyalar saqlanadigan DOIMIY papka. Ilova papkasi har yangilanishda/yangi zip
+    ochilganda almashadi, shuning uchun .exe sifatida ishlaganda %LOCALAPPDATA%/MyOwnRobot ishlatiladi
+    (MYOWNROBOT_DATA_DIR bilan o'zgartiriladi). Manba koddan ishlaganda — repozitoriy ildizi."""
+    env = os.environ.get("MYOWNROBOT_DATA_DIR")
+    if env:
+        return Path(env)
+    if getattr(sys, "frozen", False):
+        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+        return Path(base) / "MyOwnRobot"
+    return app_dir()
 
 
 def bundle_dir() -> Path:
@@ -133,11 +147,27 @@ MODES = {
 
 class Settings:
     def __init__(self, path: Optional[Path] = None, state: Optional[Path] = None):
-        self.path = path or app_dir() / "desktop_settings.json"
+        self.path = path or user_dir() / "desktop_settings.json"
         self._state = state
+        if path is None:
+            self._migrate_legacy()
         self.values: Dict[str, Any] = {f.key: f.default for f in FIELDS}
         self.ui: Dict[str, Any] = {"theme": "dark"}
         self.load()
+
+    def _migrate_legacy(self) -> None:
+        """Eski joydan (ilova papkasi) bir marta ko'chiradi: sozlamalar va state (o'rganilgan strategiyalar, jurnal)."""
+        old, new = app_dir(), user_dir()
+        if old.resolve() == new.resolve():
+            return
+        try:
+            new.mkdir(parents=True, exist_ok=True)
+            if not self.path.exists() and (old / "desktop_settings.json").is_file():
+                shutil.copy2(old / "desktop_settings.json", self.path)
+            if not (new / "state").exists() and (old / "state").is_dir():
+                shutil.copytree(old / "state", new / "state")
+        except OSError:
+            pass
 
     def load(self) -> None:
         try:
@@ -151,6 +181,7 @@ class Settings:
 
     def save(self) -> None:
         try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
             self.path.write_text(json.dumps({"env": self.values, "ui": self.ui}, ensure_ascii=False, indent=1), encoding="utf-8")
         except OSError:
             pass
@@ -165,7 +196,7 @@ class Settings:
         self.values = {f.key: f.default for f in FIELDS}
 
     def state_dir(self) -> Path:
-        return self._state or app_dir() / "state"
+        return self._state or user_dir() / "state"
 
     def resolve(self, p: str) -> str:
         """Nisbiy yo'l: avval ilova papkasi, keyin .exe ichidagi namunaviy fayllar."""
