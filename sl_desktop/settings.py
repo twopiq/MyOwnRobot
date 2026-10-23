@@ -107,8 +107,10 @@ FIELDS: List[Field] = [
 
     Field("SL_TERMINAL", "terminal64.exe yo'li", "mt5", "file", "",
           "Bir nechta MT5 ochiq bo'lsa aniq terminalni ko'rsating (bo'sh — kutubxona o'zi tanlaydi)"),
-    Field("SL_LOGIN", "Hisob raqami", "mt5", "int", 0, "Terminal boshqa hisobga ulangan bo'lsa robot to'xtaydi (0 — tekshirilmaydi)",
+    Field("SL_LOGIN", "Hisob raqami", "mt5", "int", 0, "Parol berilsa robot shu hisobga o'zi kiradi; parolsiz — terminal boshqa hisobda bo'lsa to'xtaydi (0 — tekshirilmaydi)",
           lo=0, hi=10 ** 12),
+    Field("SL_PASSWORD", "Hisob paroli", "mt5", "str", "", "Demo hisob paroli: robot o'zi kiradi. Faqat shu kompyuterdagi sozlama faylida saqlanadi"),
+    Field("SL_SERVER", "Broker serveri", "mt5", "str", "", "Masalan MetaQuotes-Demo yoki Exness-MT5Trial. Bo'sh — terminaldagi server"),
     Field("SL_MAGIC", "Magic raqam", "mt5", "int", 0, "Robot bitimlari belgisi (0 — rejimga qarab avtomatik)", lo=0, hi=10 ** 9),
     Field("TELEGRAM_ENABLED", "Telegram xabarlari", "mt5", "bool", False, "O'rganish natijasi va kill-switch haqida xabar"),
     Field("TG_BOT_TOKEN", "Telegram bot token", "mt5", "str", "", "@BotFather bergan token"),
