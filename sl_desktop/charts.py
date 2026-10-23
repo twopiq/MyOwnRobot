@@ -114,17 +114,29 @@ class Chart(FigureCanvasQTAgg):
         p = theme.current()
         if self._vline is None:
             self._vline = self.ax.axvline(best[1], color=p["muted"], linewidth=1, zorder=5)
-            self._tip = self.ax.annotate("", xy=(0, 0), xytext=(12, 12), textcoords="offset points", fontsize=9,
-                                         color=p["text"], zorder=10,
-                                         bbox=dict(boxstyle="round,pad=0.5", fc=p["surface"], ec=p["border"]))
+            self._tip = self.ax.annotate("", xy=(0, 0), xytext=(12, 12), textcoords="offset pixels", fontsize=10,
+                                         color=p["text"], zorder=10, annotation_clip=False, linespacing=1.35,
+                                         bbox=dict(boxstyle="round,pad=0.6", fc=p["surface"], ec=p["muted"], lw=1.1, alpha=1.0))
+            self._tip.set_clip_on(False)
         self._vline.set_xdata([best[1], best[1]])
         self._vline.set_visible(True)
         self._tip.xy = (best[1], best[2])
         self._tip.set_text(best[3])
-        # oyna o'ng chetdan chiqmasin
-        frac = (e.x - self.ax.bbox.x0) / max(1, self.ax.bbox.width)
-        self._tip.set_position((-150 if frac > 0.6 else 12, 12))
+        # oyna grafik (figura) chegarasidan chiqmasin: o'lchamini o'lchab, kerak bo'lsa pastga/chapga o'giramiz
+        px, py = self.ax.transData.transform((best[1], best[2]))
+        self._tip.set_position((12, 12))
         self._tip.set_visible(True)
+        try:
+            bb = self._tip.get_window_extent(self.get_renderer())
+            w, h = bb.width + 4, bb.height + 4
+        except Exception:                                    # noqa: BLE001
+            w, h = 220.0, 70.0
+        fw, fh, m = self.fig.bbox.width, self.fig.bbox.height, 6.0
+        ox = 14.0 if px + 14 + w <= fw - m else -(w + 14)
+        oy = 14.0 if py + 14 + h <= fh - m else -(h + 14)
+        ox = min(max(ox, m - px), fw - m - w - px)           # chapdan/o'ngdan ham qirqilmasin
+        oy = min(max(oy, m - py), fh - m - h - py)
+        self._tip.set_position((ox, oy))
         self.draw_idle()
 
 

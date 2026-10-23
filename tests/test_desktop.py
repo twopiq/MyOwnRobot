@@ -207,3 +207,25 @@ def test_live_page_saves_fields_immediately_and_restores_mode(tmp_path, monkeypa
     w2 = MainWindow(Settings(path, state=tmp_path / "st"))        # qayta ochish
     l2 = w2.pages["live"]
     assert l2.mode.currentData() == "ml" and l2.terminal.text() == "E:/MT5/terminal64.exe" and l2.server.text() == "MetaQuotes-Demo"
+
+
+def test_chart_tooltip_stays_inside_figure_at_every_corner(monkeypatch):
+    pytest.importorskip("PySide6")
+    pytest.importorskip("matplotlib")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    from sl_desktop.charts import AttemptsChart
+    QApplication.instance() or QApplication([])
+    c = AttemptsChart()
+    c.resize(620, 230)
+    rows = [{"no": i + 1, "t": t, "ok": False, "exp": 0.1, "need_t": 2.15} for i, t in enumerate([2.9, 0.1, -3.4, 2.8, 1.5])]
+    c.show(rows)
+    c.draw()
+    for i in range(len(rows)):                             # yuqori/pastki/chap/o'ng chekka nuqtalari
+        xs, ys = c._hover[0][0][i], c._hover[0][1][i]
+        px, py = c.ax.transData.transform((xs, ys))
+        class E:                                           # sichqoncha shu nuqta ustida
+            inaxes, xdata, x, y = c.ax, xs, px, py
+        c._on_move(E)
+        bb = c._tip.get_window_extent(c.get_renderer())
+        assert bb.x0 >= -1 and bb.y0 >= -1 and bb.x1 <= c.fig.bbox.width + 1 and bb.y1 <= c.fig.bbox.height + 1, (i, bb)
