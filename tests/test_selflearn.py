@@ -572,3 +572,15 @@ def test_password_and_server_come_from_env(monkeypatch):
     monkeypatch.setenv("SL_SERVER", "X-Demo")
     c = sc.Cfg.from_env()
     assert c.password == "abc" and c.server == "X-Demo"
+
+
+def test_simulate_mixed_holds_near_end_of_data_does_not_overflow(hist):
+    """Xato: bir paketda qisqa va uzun ushlash bo'lsa, qisqa ushlashli signal tarix oxiriga yaqin bo'lganda IndexError."""
+    b = sc.Bars.of(hist.iloc[:5000])
+    n = len(b)
+    idx = np.array([1000, n - 20, n - 15])            # oxirgi ikkitasi 8 shamlik ushlash bilan to'liq sig'adi
+    hold = np.array([96, 8, 8])
+    t = sc.simulate(b, idx, 1, 2.0, 3.0, hold, 0.3, 0.05, no_overlap=False)
+    assert len(t) == 3 and np.isfinite(t.R).all()
+    ref_j, ref_r = _ref(b, 0.3, 0.05, n - 20, 1, 2.0, 3.0, 8)
+    assert t.exit_i[1] == ref_j and abs(t.R[1] - ref_r) < 1e-9

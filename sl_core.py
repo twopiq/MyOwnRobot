@@ -379,7 +379,7 @@ def _sim_chunk(b: Bars, idx: np.ndarray, dirs: np.ndarray, sl: np.ndarray, tp: n
     sl_p = np.where(long, e - sl, e + sl)
     tp_p = np.where(long, e + tp, e - tp)
     off = np.arange(H)[None, :]
-    rows = j0[:, None] + off
+    rows = np.minimum(j0[:, None] + off, len(b.c) - 1)     # H = chunk dagi eng uzun ushlash; qisqa ushlashli signal oxirga yaqin bo'lsa chegaradan chiqmasin (valid maskasi baribir kesadi)
     lo, hi, cl = b.l[rows], b.h[rows], b.c[rows]
     valid = off < hold[:, None]
     lg = long[:, None]
