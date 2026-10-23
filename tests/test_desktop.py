@@ -161,3 +161,49 @@ def test_learn_page_shows_attempts_in_forever_mode(tmp_path, monkeypatch):
     lp._budget_changed()
     assert lp.attempts_done() == 4 and "4 urinish" in lp.done_lbl.text()
     w.close()
+
+
+def test_settings_live_in_stable_user_dir_and_migrate_from_app_dir(tmp_path, monkeypatch):
+    from sl_desktop import settings as S
+    old, new = tmp_path / "app_v1", tmp_path / "userdata"
+    (old / "state").mkdir(parents=True)
+    (old / "state" / "optimizer_strategy.json").write_text("{}")
+    (old / "desktop_settings.json").write_text('{"env": {"SL_MODE": "ml", "SL_TERMINAL": "E:/MT5/terminal64.exe", "SL_LOGIN": 5}}')
+    monkeypatch.setattr(S, "app_dir", lambda: old)
+    monkeypatch.setenv("MYOWNROBOT_DATA_DIR", str(new))
+    s = S.Settings()
+    assert s.path == new / "desktop_settings.json"
+    assert s.get("SL_MODE") == "ml" and s.get("SL_TERMINAL") == "E:/MT5/terminal64.exe" and s.get("SL_LOGIN") == 5
+    assert (new / "state" / "optimizer_strategy.json").exists()
+    s.set("SL_SERVER", "X-Demo")
+    s.save()
+    # ilova boshqa papkaga ko'chdi (yangi zip/yangilanish): sozlamalar yo'qolmaydi
+    monkeypatch.setattr(S, "app_dir", lambda: tmp_path / "app_v2")
+    s2 = S.Settings()
+    assert s2.get("SL_MODE") == "ml" and s2.get("SL_SERVER") == "X-Demo" and s2.state_dir() == new / "state"
+
+
+def test_live_page_saves_fields_immediately_and_restores_mode(tmp_path, monkeypatch):
+    pytest.importorskip("PySide6")
+    pytest.importorskip("matplotlib")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    from sl_desktop.app import MainWindow
+    from sl_desktop.settings import Settings
+    QApplication.instance() or QApplication([])
+    path = tmp_path / "s.json"
+    w = MainWindow(Settings(path, state=tmp_path / "st"))
+    live = w.pages["live"]
+    live.mode.setCurrentIndex(live.mode.findData("ml"))
+    live.terminal.setText("E:/MT5/terminal64.exe")
+    live.terminal.editingFinished.emit()
+    live.password.setText("pw")
+    live.password.editingFinished.emit()
+    live.server.setText("MetaQuotes-Demo")
+    live.server.editingFinished.emit()
+    saved = json.loads(path.read_text(encoding="utf-8"))["env"]
+    assert saved["SL_MODE"] == "ml" and saved["SL_TERMINAL"] == "E:/MT5/terminal64.exe"
+    assert saved["SL_PASSWORD"] == "pw" and saved["SL_SERVER"] == "MetaQuotes-Demo"
+    w2 = MainWindow(Settings(path, state=tmp_path / "st"))        # qayta ochish
+    l2 = w2.pages["live"]
+    assert l2.mode.currentData() == "ml" and l2.terminal.text() == "E:/MT5/terminal64.exe" and l2.server.text() == "MetaQuotes-Demo"

@@ -86,6 +86,14 @@ class LivePage(W.Page):
         self.risk_hint = W.label("", "muted", wrap=True)
         c3.addWidget(self.risk_hint)
         self.risk.valueChanged.connect(self._risk_hint)
+        i0 = self.mode.findData(s.get("SL_MODE"))
+        if i0 >= 0:
+            self.mode.setCurrentIndex(i0)
+        self.mode.currentIndexChanged.connect(self._persist)
+        for e in (self.symbol, self.terminal, self.password, self.server):
+            e.editingFinished.connect(self._persist)
+        self.login.editingFinished.connect(self._persist)
+        self.risk.editingFinished.connect(self._persist)
         g.addLayout(c3, 1)
         cc.body.addLayout(g)
         br = QHBoxLayout()
@@ -181,6 +189,20 @@ class LivePage(W.Page):
         if f:
             self.terminal.setText(f)
 
+    def _persist(self, *_a) -> None:
+        """Maydon o'zgarishi bilan darhol saqlaydi — ishga tushirishni kutmasdan (keyingi safar qayta kiritish shart emas)."""
+        if getattr(self, "_loading", False):
+            return
+        s = self.app.settings
+        s.set("SL_MODE", self.mode.currentData() or s.get("SL_MODE"))
+        s.set("SL_SYMBOL", self.symbol.text().strip() or "XAUUSD")
+        s.set("SL_TERMINAL", self.terminal.text().strip())
+        s.set("SL_LOGIN", self.login.value())
+        s.set("SL_PASSWORD", self.password.text())
+        s.set("SL_SERVER", self.server.text().strip())
+        s.set("SL_RISK_PCT", self.risk.value())
+        s.save()
+
     def _risk_hint(self) -> None:
         r = self.risk.value()
         self.risk_hint.setText("10 000 balansda bitta SL ≈ %s zarar" % D.fmt_money(100.0 * r))
@@ -235,8 +257,10 @@ class LivePage(W.Page):
         s = app.settings
         running = app.live.running
         i = self.mode.findData(s.get("SL_MODE"))
-        if i >= 0 and not running:
+        if i >= 0 and not running and self.mode.currentIndex() != i:
+            self._loading = True
             self.mode.setCurrentIndex(i)
+            self._loading = False
         for w in (self.mode, self.symbol, self.terminal, self.login, self.risk):
             w.setEnabled(not running)
         self.start_btn.setEnabled(not running)
