@@ -550,3 +550,25 @@ def test_attempt_key_ignores_costs():
     h = synth(500)
     assert sr._data_key(sc.Cfg(spread=0.3), h) == sr._data_key(sc.Cfg(spread=0.5), h)
     assert sr._data_key(sc.Cfg(mode="ml"), h) != sr._data_key(sc.Cfg(mode="genetic"), h)
+
+
+def test_broker_signs_in_itself_with_login_password_server():
+    m = make_fake()
+    seen = {}
+    m.initialize = lambda **k: seen.update(k) or True
+    sc.Broker(sc.Cfg(login=1, password="pw", server="MetaQuotes-Demo"), m).connect()
+    assert seen == {"login": 1, "password": "pw", "server": "MetaQuotes-Demo"}
+    seen.clear()
+    sc.Broker(sc.Cfg(terminal="t.exe", portable=True, login=1, password="pw"), m).connect()
+    assert seen == {"path": "t.exe", "portable": True, "login": 1, "password": "pw"}
+    m.initialize = lambda **k: False
+    with pytest.raises(RuntimeError, match="login/parol/server") as e:
+        sc.Broker(sc.Cfg(login=1, password="topsecret"), m).connect()
+    assert "topsecret" not in str(e.value)
+
+
+def test_password_and_server_come_from_env(monkeypatch):
+    monkeypatch.setenv("SL_PASSWORD", "abc")
+    monkeypatch.setenv("SL_SERVER", "X-Demo")
+    c = sc.Cfg.from_env()
+    assert c.password == "abc" and c.server == "X-Demo"

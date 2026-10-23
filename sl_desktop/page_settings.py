@@ -91,7 +91,7 @@ class SettingsPage(W.Page):
             w.edit = e
         else:
             w = QLineEdit()
-            if "TOKEN" in f.key:
+            if "TOKEN" in f.key or "PASSWORD" in f.key:
                 w.setEchoMode(QLineEdit.EchoMode.Password)
         w.setToolTip(f.help)
         return w

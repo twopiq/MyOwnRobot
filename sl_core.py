@@ -92,7 +92,9 @@ class Cfg:
     state_dir: str = "state"
     terminal: str = ""              # terminal64.exe yo'li (bo'sh — MT5 kutubxonasi o'zi tanlaydi)
     portable: bool = False
-    login: int = 0                  # kutilgan hisob raqami (0 — tekshirilmaydi)
+    login: int = 0                  # hisob raqami (parol berilsa — robot o'zi kiradi, aks holda faqat tekshiradi)
+    password: str = ""              # hisob paroli (demo); jurnalga yozilmaydi
+    server: str = ""                # broker serveri, masalan MetaQuotes-Demo
     server_gmt: float = float("nan")   # MT5 server GMT (qishki) — bo'sh bo'lsa avtomatik aniqlanadi
     # --- qabul darvozasi (holdout = eng oxirgi tegilmagan davr)
     min_test_trades: int = 40
@@ -142,6 +144,8 @@ class Cfg:
         c.terminal = _env("SL_TERMINAL", c.terminal).strip('"')
         c.portable = env_b("SL_PORTABLE", bool(c.terminal))
         c.login = env_i("SL_LOGIN", c.login)
+        c.password = os.environ.get("SL_PASSWORD", "")
+        c.server = _env("SL_SERVER", c.server)
         sg = _env("SL_SERVER_GMT", "")
         c.server_gmt = float(sg) if sg else float("nan")
         c.min_test_trades = env_i("SL_MIN_TEST_TRADES", c.min_test_trades)
@@ -701,13 +705,19 @@ class Broker:
         kw: Dict[str, Any] = {}
         if self.cfg.terminal:
             kw = {"path": self.cfg.terminal, "portable": self.cfg.portable}
+        signin = bool(self.cfg.login and self.cfg.password)
+        if signin:                                   # robot o'zi hisobga kiradi (terminalda saqlangan hisob shart emas)
+            kw.update(login=self.cfg.login, password=self.cfg.password)
+            if self.cfg.server:
+                kw["server"] = self.cfg.server
         if not m.initialize(**kw):
-            raise RuntimeError("MT5 initialize xato: %s" % (m.last_error(),))
+            hint = " (login/parol/server to'g'ri ekanini tekshiring)" if signin else ""
+            raise RuntimeError("MT5 initialize xato: %s%s" % (m.last_error(), hint))
         ai = m.account_info()
         if ai is None:
             raise RuntimeError("MT5 hisob ma'lumoti yo'q")
         if self.cfg.login and int(ai.login) != self.cfg.login:
-            raise RuntimeError("Terminal boshqa hisobga ulangan: %s (kutilgan SL_LOGIN=%s) — SL_TERMINAL yo'lini tekshiring" % (
+            raise RuntimeError("Terminal boshqa hisobga ulangan: %s (kutilgan SL_LOGIN=%s) — parolni kiriting (robot o'zi kiradi) yoki SL_TERMINAL yo'lini tekshiring" % (
                 ai.login, self.cfg.login))
         if self.cfg.demo_only and int(ai.trade_mode) != int(m.ACCOUNT_TRADE_MODE_DEMO):
             raise RuntimeError("Bu robot faqat DEMO hisobda ishlaydi (SL_DEMO_ONLY=0 bilan o'chiriladi)")

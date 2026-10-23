@@ -91,7 +91,7 @@ Robotning o'z terminali yo'q. Mustaqil ishga tushirilganda bir nechta terminal o
 set SL_TERMINAL=E:\Program files\MetaTrader 5\terminal64.exe
 set SL_LOGIN=114043214
 ```
-`SL_LOGIN` ulangan hisob boshqa bo'lsa robotni to'xtatadi. Portable terminal (papka ichida `portable` rejimida) uchun `SL_PORTABLE=1` (yo'l berilganda standart yoqilgan).
+`SL_LOGIN` bilan birga `SL_PASSWORD` va `SL_SERVER` berilsa robot **o'zi hisobga kiradi** (ilovada: Jonli → Hisob maydonlari). Parolsiz `SL_LOGIN` — faqat tekshiruv: ulangan hisob boshqa bo'lsa robot to'xtaydi. Portable terminal (papka ichida `portable` rejimida) uchun `SL_PORTABLE=1` (yo'l berilganda standart yoqilgan).
 Robot No.1 orqali ishga tushirilsa bu sozlamalar kerak emas — dastur har slotning terminalini o'zi beradi.
 
 ## Sozlamalar (env)
