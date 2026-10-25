@@ -172,8 +172,17 @@ def learn_repeat(cfg: sc.Cfg, hist: pd.DataFrame, base: Any = None, forever: Opt
     stop = sc.state_path(cfg, "stop.flag")
     last: Optional[tuple] = None
     k = 0
+    cap = sc.env_i("SL_MAX_ATTEMPTS", 40)
     while True:
         j = done + k + 1                                         # shu ma'lumotdagi jami urinish raqami
+        if forever and cap > 0 and j > cap:
+            sc.log("urinish limiti (%d) to'ldi: shu hafta ma'lumotida ko'proq urinish — bu holdout'ni yodlab olish. "
+                   "Yangi ma'lumot (keyingi hafta) kelganda davom etadi." % cap)
+            if last is None:
+                eng = load_engine(dataclasses.replace(cfg, attempt=done)); eng.load()
+                last = (eng, sc.Report(mode=cfg.mode, summary="urinish limiti to'ldi (%d)" % cap,
+                                       reasons=["limit: yangi ma'lumot kutilmoqda"]))
+            break
         trials = max(cfg.trials, j if forever else done + n)
         c = dataclasses.replace(cfg, seed=cfg.seed + done + k, trials=trials, attempt=done + k)
         eng = load_engine(c)
