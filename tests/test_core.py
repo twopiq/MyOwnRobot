@@ -104,7 +104,10 @@ def test_env_stop_loss_costs_exactly_one_r_plus_costs():
     e.reset(s, j, 280)
     _, r, d, info = e.step(BUY)
     assert e.side == 0 and info is not None and info["reason"] == "stop"
-    assert info["r"] < -1.0                                          # SL + spred
+    assert abs(info["r"] + 1.0) < 1e-9                                # SL aynan -1R (spred kirish narxida hisobda)
+    e2 = Env(EnvCfg(sl_atr=1.5, slippage_atr=0.05))                   # sirpanish bo'lsa -1R dan yomonroq
+    e2.reset(s, j, 280)
+    assert e2.step(BUY)[3]["r"] < -1.0
     assert abs(r - info["r"]) < 1e-9                                 # mukofot yig'indisi = bitim natijasi
 
 
