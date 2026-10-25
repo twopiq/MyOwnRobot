@@ -1,16 +1,15 @@
-"""MyOwnRobot desktop ilovasi — ishga tushiruvchi "qobiq".
+"""MyOwnRobot ishga tushiruvchi "qobiq".
 
     python desktop_app.py                        — ilovani ochish
-    python desktop_app.py --robot [...]          — robotning o'zi (selflearn_robot.py argumentlari; .exe ichida ishlatiladi)
+    python desktop_app.py --robot [...]          — buyruq qatori rejimi (mor.cli: import / train / info)
     python desktop_app.py --self-test out.json   — oynani yaratib tekshiradi (CI uchun)
 
-O'rnatilgan (.exe) dasturda ilova va robot kodi .exe ichida emas, alohida zip arxivda turadi. Ishga tushishda eng
+O'rnatilgan (.exe) dasturda ilova kodi (`mor` paketi) .exe ichida emas, alohida zip arxivda turadi. Ishga tushishda eng
 yangi mos kod tanlanadi:
   1. %LOCALAPPDATA%/MyOwnRobot/updates/<versiya>/myownrobot_app.zip — yuklangan yangilanishlar
      (faqat kutubxonalari — "libs" — shu .exe bilan bir xil bo'lganlari);
   2. aks holda .exe bilan kelgan app/myownrobot_app.zip.
 Yangilangan kod ishga tushmasa, u "buzilgan" (BROKEN) deb belgilanadi va o'rnatilgan kod ishlatiladi.
-Robot jarayoni (--robot) ham xuddi shu tanlovdan o'tadi, shuning uchun u ilova bilan bir xil versiyada ishlaydi.
 
 Bu faylni kod yangilanishi o'zgartira olmaydi — u faqat to'liq qayta yig'ishda yangilanadi.
 """
@@ -20,6 +19,7 @@ import os
 import sys
 
 APP_ZIP = "myownrobot_app.zip"
+_OURS = ("mor",)
 
 
 def _vt(v):
@@ -27,7 +27,7 @@ def _vt(v):
 
 
 def _updates_dir():
-    # sl_desktop/updater.py dagi updates_dir() bilan bir xil bo'lishi kerak
+    # mor/updater.py dagi updates_dir() bilan bir xil bo'lishi kerak
     if os.environ.get("MYOWNROBOT_UPDATES_DIR"):
         return os.environ["MYOWNROBOT_UPDATES_DIR"]
     if os.name == "nt":
@@ -64,9 +64,6 @@ def _candidates():
     return out
 
 
-_OURS = ("sl_desktop", "selflearn_robot", "sl_core", "sl_genetic", "sl_optimizer", "sl_ml")
-
-
 def _load(gui: bool = True):
     """Ilova kodini eng yangi ishlaydigan arxivdan yuklaydi; manbani qaytaradi ("source" yoki zip yo'li)."""
     cands = _candidates()
@@ -77,11 +74,11 @@ def _load(gui: bool = True):
     for _, zpath, upd_dir in cands:
         sys.path.insert(0, zpath)
         try:
-            import sl_desktop
-            import selflearn_robot  # noqa: F401
+            import mor
+            import mor.cli  # noqa: F401
             if gui:
-                import sl_desktop.app  # noqa: F401  (butun ilova importi — buzuq arxiv shu yerda aniqlanadi)
-            os.environ["MYOWNROBOT_RUNNING_VERSION"] = sl_desktop.__version__
+                import mor.app  # noqa: F401  (butun ilova importi — buzuq arxiv shu yerda aniqlanadi)
+            os.environ["MYOWNROBOT_RUNNING_VERSION"] = mor.__version__
             return zpath
         except Exception as e:  # yangilanish buzilgan — keyingisiga o'tamiz
             last_error = e
@@ -101,24 +98,18 @@ def main() -> int:
     robot = len(sys.argv) > 1 and sys.argv[1] == "--robot"
     source = _load(gui=not robot)
     if robot:
-        sys.argv = ["selflearn_robot.py"] + sys.argv[2:]
-        import selflearn_robot
-        selflearn_robot.main()
-        return 0
-    from PySide6.QtWidgets import QApplication
-    import sl_desktop
-    from sl_desktop.app import MainWindow
-    app = QApplication(sys.argv)
-    app.setApplicationName("MyOwnRobot")
-    w = MainWindow()
-    if len(sys.argv) > 2 and sys.argv[1] == "--self-test":
-        for k in w.pages:
-            w.go(k)
-        with open(sys.argv[2], "w", encoding="utf-8") as f:
-            json.dump({"version": sl_desktop.__version__, "source": source, "pages": list(w.pages)}, f)
-        return 0
-    w.show()
-    return app.exec()
+        import mor.cli
+        return mor.cli.main(sys.argv[2:])
+    import mor.app
+    argv = list(sys.argv)
+    rc = mor.app.run_gui(argv)
+    if len(argv) > 2 and argv[1] == "--self-test":          # manba ma'lumotini qo'shamiz
+        with open(argv[2], encoding="utf-8") as f:
+            d = json.load(f)
+        d["source"] = source
+        with open(argv[2], "w", encoding="utf-8") as f:
+            json.dump(d, f)
+    return rc
 
 
 if __name__ == "__main__":

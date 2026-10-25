@@ -26,7 +26,7 @@ jobs:
       - name: Versiya
         id: ver
         shell: bash
-        run: echo "version=$(python -c 'import sl_desktop as s; print(s.__version__)')" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(python -c 'import mor as s; print(s.__version__)')" >> "$GITHUB_OUTPUT"
       - name: Reliz kerakmi
         id: rel
         shell: bash
@@ -58,15 +58,18 @@ jobs:
           Write-Host "Versiya: $($j.version)  Manba: $($j.source)"
           if ($j.version -ne '${{ steps.ver.outputs.version }}') { throw "Versiya mos emas" }
           if ($j.source -notlike '*app\myownrobot_app.zip') { throw "Kod zip'dan yuklanmadi" }
-      - name: Robot .exe ichidan ishlashini sinash (--robot --learn)
+      - name: Robot .exe ichidan ishlashini sinash (--robot import + train)
         shell: pwsh
         env:
           MYOWNROBOT_UPDATES_DIR: ${{ runner.temp }}\no_updates
+          MYOWNROBOT_HOME: ${{ runner.temp }}\mor_home
         run: |
-          $st = Join-Path $env:RUNNER_TEMP 'st'
-          $p = Start-Process -FilePath 'dist\MyOwnRobot\MyOwnRobot.exe' -ArgumentList '--robot','--learn','--mode','ml','--history','_internal\data\XAUUSD_M15.csv','--state',$st -Wait -PassThru -WorkingDirectory 'dist\MyOwnRobot'
-          if ($p.ExitCode -ne 0) { throw "robot chiqish kodi: $($p.ExitCode)" }
-          if (-not (Test-Path (Join-Path $st 'report_ml.json'))) { throw "hisobot yozilmadi" }
+          $exe = 'dist\MyOwnRobot\MyOwnRobot.exe'
+          $csv = (Resolve-Path 'dist\MyOwnRobot\_internal\data\XAUUSD_M15.csv').Path
+          $p = Start-Process -FilePath $exe -ArgumentList '--robot','import',$csv,'--symbol','XAUUSD','--tf','M15' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "import chiqish kodi: $($p.ExitCode)" }
+          $p = Start-Process -FilePath $exe -ArgumentList '--robot','train','--epochs','1','--envs','4','--symbols','XAUUSD','--max-seconds','60' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "train chiqish kodi: $($p.ExitCode)" }
       - name: Arxivlash va yangilanish fayllari
         shell: pwsh
         env:

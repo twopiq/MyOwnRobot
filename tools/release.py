@@ -19,8 +19,7 @@ import sys
 import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PKG = os.path.join(ROOT, "sl_desktop")
-ROBOT = ("selflearn_robot.py", "sl_core.py", "sl_genetic.py", "sl_optimizer.py", "sl_ml.py")
+PKG = os.path.join(ROOT, "mor")
 APP_ZIP = "myownrobot_app.zip"
 
 
@@ -47,7 +46,7 @@ def sha256(path: str) -> str:
 
 
 def build_app_zip(dest: str) -> None:
-    """Ilova (sl_desktop/) va robot modullari — zip ildizida, zipimport bilan to'g'ridan-to'g'ri yuklanadi."""
+    """Ilova kodi (mor/) — zip ildizida, zipimport bilan to'g'ridan-to'g'ri yuklanadi (faqat .py fayllar)."""
     with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as z:
         for folder, dirs, files in os.walk(PKG):
             dirs[:] = [d for d in dirs if d != "__pycache__"]
@@ -55,8 +54,6 @@ def build_app_zip(dest: str) -> None:
                 if fn.endswith(".py"):
                     full = os.path.join(folder, fn)
                     z.write(full, os.path.relpath(full, ROOT).replace(os.sep, "/"))
-        for fn in ROBOT:
-            z.write(os.path.join(ROOT, fn), fn)
 
 
 def clean_notes(text: str) -> str:
