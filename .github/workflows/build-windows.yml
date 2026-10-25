@@ -52,7 +52,9 @@ jobs:
           MYOWNROBOT_UPDATES_DIR: ${{ runner.temp }}\no_updates
         run: |
           $out = Join-Path $env:RUNNER_TEMP 'selftest.json'
-          $p = Start-Process -FilePath 'dist\MyOwnRobot\MyOwnRobot.exe' -ArgumentList '--self-test', $out -Wait -PassThru
+          $p = Start-Process -FilePath 'dist\MyOwnRobot\MyOwnRobot.exe' -ArgumentList '--self-test', $out -PassThru
+          if (-not $p.WaitForExit(120000)) { $p.Kill(); if (Test-Path "$out.err") { Get-Content "$out.err" }; throw "self-test osilib qoldi (120 s)" }
+          if (Test-Path "$out.err") { Get-Content "$out.err" }
           if ($p.ExitCode -ne 0) { throw "self-test chiqish kodi: $($p.ExitCode)" }
           $j = Get-Content $out | ConvertFrom-Json
           Write-Host "Versiya: $($j.version)  Manba: $($j.source)"

@@ -112,5 +112,21 @@ def main() -> int:
     return rc
 
 
+def _guarded() -> int:
+    try:
+        return main()
+    except BaseException:
+        import traceback
+        if len(sys.argv) > 2 and sys.argv[1] == "--self-test":      # CI: xatoni faylga yozamiz (oynasiz .exe da konsol yo'q)
+            with open(sys.argv[2] + ".err", "w", encoding="utf-8") as f:
+                f.write(traceback.format_exc())
+            return 1                                              # oyna chiqmasin (PyInstaller xato oynasi CI ni osib qo'yadi)
+        raise
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    rc = _guarded()
+    if len(sys.argv) > 2 and sys.argv[1] == "--self-test":
+        sys.stdout.flush()
+        os._exit(rc or 0)                                         # oqimlar/taymerlar jarayonni ushlab turmasin
+    sys.exit(rc)
