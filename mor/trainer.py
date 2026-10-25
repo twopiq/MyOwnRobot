@@ -153,8 +153,9 @@ class Trainer:
         return trades, steps
 
     def evaluate(self, agent: Agent, series: List[Series], split: str, guard: Optional[Guard] = None,
-                 max_bars: int = 0) -> List[Dict]:
-        """Ochko'z (eps=0) yurish: har instrument segmenti bo'ylab ketma-ket."""
+                 max_bars: int = 0, eps: float = 0.0) -> List[Dict]:
+        """Ochko'z (eps=0) yurish: har instrument segmenti bo'ylab ketma-ket. eps>0 — tadqiqotchi rejim
+        (qonuniyatni o'rganilmagan davrda tekshirish uchun xilma-xil bitimlar beradi)."""
         envs = []
         for s in series:
             lo, hi = s.bounds[split]
@@ -170,8 +171,11 @@ class Trainer:
                 break
             obs = np.stack([envs[i].obs() for i in act_ix])
             mask = Agent.mask_from_obs(obs, F.N_FEATURES)
-            a = agent.q_values(obs)
-            a = np.where(mask, a, -1e9).argmax(1)
+            if eps > 0:
+                a = agent.act(obs, mask, eps, self.cfg.hold_bias)
+            else:
+                a = agent.q_values(obs)
+                a = np.where(mask, a, -1e9).argmax(1)
             for j, i in enumerate(act_ix):
                 act = int(a[j])
                 if guard is not None and act in (1, 2) and guard.veto(obs[j][:F.N_FEATURES], 1 if act == 1 else -1):
@@ -247,7 +251,9 @@ class Trainer:
         test_tr = self.evaluate(agent, series, "test")
         db.add_experiences(run_id, "val", val_tr)
         db.add_experiences(run_id, "test", test_tr)
-        lessons = mine(db.experience_arrays("train"), db.experience_arrays("val"), MineCfg())
+        # qonuniyat tekshiruvi: o'rganilmagan val davrida tadqiqotchi rejimdagi bitimlar (ochko'z agent faqat bir tomonga savdo qiladi)
+        db.add_experiences(run_id, "val_explore", self.evaluate(agent, series, "val", eps=0.5))
+        lessons = mine(db.experience_arrays("train"), db.experience_arrays("val_explore"), MineCfg())
         db.replace_lessons(run_id, lessons)
         guard = Guard(lessons)
         test_g = self.evaluate(agent, series, "test", guard) if len(guard) else test_tr
@@ -275,7 +281,7 @@ class Trainer:
                           if x["status"] == "verified" and x["kind"] == "avoid"], "gate_ok": ok,
                           "hidden": list(cfg.hidden)})
         db.add_policy(run_id, ver, path, {k: v for k, v in m.items() if k not in ("history",)}, ok)
-        db.finish_run(run_id, {k: v for k, v in m.items() if k != "history"})
+        db.finish_run(run_id, m)
         m["policy_version"], m["policy_path"] = ver, path
         self.emit({"type": "done", "metrics": m})
         return m

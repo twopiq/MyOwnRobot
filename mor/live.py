@@ -280,6 +280,7 @@ class LiveRunner:
         while not self.stop():
             try:
                 self.step_once()
+                self.emit({"type": "account", **self.broker.account()})
             except Exception as e:  # noqa: BLE001
                 self.emit({"type": "error", "msg": str(e)})
             time.sleep(self.cfg.poll_sec)
