@@ -366,7 +366,7 @@ def install_code_update(info: UpdateInfo, progress=None) -> str:
         _download_retry(info.source, m["app_zip"], zpath, progress)
         _verify(zpath, m.get("app_sha256"))
         with zipfile.ZipFile(zpath) as z:
-            if z.testzip() is not None or "sl_desktop/__init__.py" not in z.namelist():
+            if z.testzip() is not None or "mor/__init__.py" not in z.namelist():
                 raise UpdateError("Yangilanish arxivi noto'g'ri")
         with open(os.path.join(tmp, "manifest.json"), "w", encoding="utf-8") as f:
             json.dump({"version": m["version"], "libs": m.get("libs"), "notes": m.get("notes", "")}, f,
