@@ -61,6 +61,10 @@ def env_f(name: str, default: float) -> float:
         return default
 
 
+def env_s(name: str, default: str) -> str:
+    return os.environ.get(name, default).strip() or default
+
+
 def env_i(name: str, default: int) -> int:
     return int(env_f(name, float(default)))
 

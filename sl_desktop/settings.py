@@ -95,6 +95,12 @@ FIELDS: List[Field] = [
     Field("SL_FOREVER", "Uzluksiz o'rganish", "learn", "bool", True,
           "O'rganish tugmasi bosilganda robot darvozadan o'tguncha (yoki to'xtatilguncha) qayta-qayta, har safar yangi "
           "variant bilan o'rganadi"),
+    Field("SL_MAX_ATTEMPTS", "Urinishlar limiti (ma'lumot uchun)", "learn", "int", 40,
+          "Bir xil ma'lumotda shuncha urinishdan keyin to'xtaydi (ko'proq urinish holdout'ni yodlab olishga olib keladi). 0 = limitsiz",
+          lo=0, hi=1000),
+    Field("SL_ML_OBJECTIVE", "ML maqsadi", "learn", "choice", "auto",
+          "classify: g'alaba/mag'lubiyat; weighted: katta zarar/foyda og'irroq; auto: urinishlarda navbatma-navbat",
+          choices=["auto", "classify", "weighted"]),
     Field("SL_LEARN_UNTIL_PASS", "Jonli: o'tguncha qayta o'rganish", "learn", "bool", True,
           "Jonli rejimda tekshirilgan strategiya bo'lmasa haftani kutmasdan darhol qayta o'rganadi"),
     Field("SL_LIVE_CONTINUOUS", "Jonli: to'xtamasdan o'rganish", "learn", "bool", True,

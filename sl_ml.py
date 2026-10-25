@@ -81,6 +81,17 @@ def attempt_config(cfg: sc.Cfg, sl: float, rr: float, hold: int) -> Tuple[float,
             int(HOLD_GRID[int(r.integers(len(HOLD_GRID)))]), hp)
 
 
+OBJECTIVES = ["classify", "weighted"]
+
+
+def objective_for(cfg: sc.Cfg) -> str:
+    """SL_ML_OBJECTIVE: classify | weighted | auto (auto: urinishlar bo'yicha navbatma-navbat)."""
+    o = sc.env_s("SL_ML_OBJECTIVE", "auto").lower()
+    if o in OBJECTIVES:
+        return o
+    return OBJECTIVES[max(0, cfg.attempt) % len(OBJECTIVES)]
+
+
 def _new_model(seed: int, hp: Optional[Dict[str, Any]] = None):
     hp = {**DEFAULT_HP, **(hp or {})}
     try:
@@ -162,6 +173,40 @@ class Engine:
             return None
         return sc.Signal(d, self.sl * a14[-1], self.sl * self.rr * a14[-1], self.hold, "ml%.2f" % p)
 
+    # ------------------------------------------------------------ mustahkamlik
+    def _walk_forward(self, b, X, a14, rows, fit, trades_at, thr, seg, n, hold_m):
+        """Holdout'dan o'tgan modelni yana bir bor tekshiradi: oxirgi 50% tarixni 5 bo'lakka bo'lib, har bo'lak uchun
+        faqat undan OLDINGI ma'lumotda qayta o'rgatadi va bo'lakda savdo qiladi. Kamida 60% bo'lak foydali va
+        umumiy kutilma > 0 bo'lishi shart (bitta holdout tasodifiga bog'liq bo'lmaslik uchun)."""
+        k, start = 5, n // 2
+        edges = np.linspace(start, n, k + 1).astype(int)
+        exps, ns = [], []
+        allR: List[np.ndarray] = []
+        for i in range(k):
+            lo, hi = int(edges[i]), int(edges[i + 1])
+            tr_ix = rows(0, lo - hold_m - 2)
+            te_ix = rows(lo, hi)
+            if len(tr_ix) < 3000 or len(te_ix) < 100:
+                continue
+            ms, _ = fit(tr_ix)
+            tt = trades_at(ms, te_ix, thr, lo, hi)
+            exps.append(float(tt.R.mean()) if len(tt.R) else 0.0)
+            ns.append(int(len(tt.R)))
+            allR.append(np.asarray(tt.R))
+        info = {"folds": [round(x, 3) for x in exps], "n": ns}
+        if len(exps) < 3:
+            return False, ["walk-forward uchun ma'lumot yetarli emas"], info
+        pooled = np.concatenate(allR) if allR else np.zeros(0)
+        pe = float(pooled.mean()) if len(pooled) else 0.0
+        share = sum(1 for e in exps if e > 0) / len(exps)
+        info.update({"pooled": round(pe, 3), "share": round(share, 2)})
+        why = []
+        if pe <= 0:
+            why.append("walk-forward umumiy kutilma %.3fR ≤ 0" % pe)
+        if share < 0.6:
+            why.append("walk-forward bo'laklarining faqat %.0f%% foydali" % (share * 100))
+        return (not why), why, info
+
     # ------------------------------------------------------------ o'rganish
     def learn(self, hist: pd.DataFrame, budget: Optional[float] = None, progress=None) -> sc.Report:
         t0 = time.time()
@@ -174,13 +219,16 @@ class Engine:
         rep.extra["params"] = {"sl": sl_m, "rr": rr_m, "hold": hold_m, **hp}
         # --- yorliqlar: har sham uchun BUY va SELL natijasi (kesishuvchi bitimlarga ruxsat — bu faqat yorliq)
         allidx = np.arange(sc.WARMUP, n - hold_m - 3)
-        y = {}
+        y, yr = {}, {}
         for d, key in ((1, "long"), (-1, "short")):
             tr = sc.simulate(b, allidx, d, sl_m * a14[allidx], sl_m * rr_m * a14[allidx], hold_m,
                              cfg.spread, cfg.slippage, no_overlap=False)
             lab = np.full(n, -1, dtype=np.int8)
             lab[tr.entry_i - 1] = (tr.R > 0).astype(np.int8)
             y[key] = lab
+            rr_arr = np.zeros(n, dtype=np.float32)
+            rr_arr[tr.entry_i - 1] = tr.R
+            yr[key] = rr_arr
         seg = sc.split_ranges(n)
         emb = hold_m + 2
 
@@ -194,11 +242,17 @@ class Engine:
             rep.reasons = [rep.summary]
             return rep
 
+        objective = objective_for(cfg)
+        rep.extra["objective"] = objective
+
         def fit(rr_: np.ndarray) -> Tuple[Dict[str, Any], str]:
             ms, kind = {}, ""
             for key in ("long", "short"):
                 m, kind = _new_model(cfg.seed, hp)
-                m.fit(X[rr_], y[key][rr_])
+                if objective == "weighted":      # katta zarar/foyda ko'proq "jazo/mukofot" oladi
+                    m.fit(X[rr_], y[key][rr_], sample_weight=np.clip(np.abs(yr[key][rr_]), 0.2, 3.0) + 0.0)
+                else:
+                    m.fit(X[rr_], y[key][rr_])
                 ms[key] = m
             return ms, kind
 
@@ -244,6 +298,11 @@ class Engine:
         rep.segments = {k: sc.stats(v) for k, v in res.items()}
         ok, why = sc.gate(cfg, rep.segments, sc.chunk_exps(res["test"], te0, te1, 4), rep=rep)
         rep.curves = sc.curves_of(res, hist.index)
+        if ok:
+            wf_ok, wf_why, wf = self._walk_forward(b, X, a14, rows, fit, trades_at, best_thr, seg, n, hold_m)
+            rep.extra["walk_forward"] = wf
+            if not wf_ok:
+                ok, why = False, why + wf_why
         conf = sc.make_confirm(cfg)
         if ok and conf:
             def _ev(d, sp_, sj_):

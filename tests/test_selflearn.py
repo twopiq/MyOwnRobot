@@ -584,3 +584,50 @@ def test_simulate_mixed_holds_near_end_of_data_does_not_overflow(hist):
     assert len(t) == 3 and np.isfinite(t.R).all()
     ref_j, ref_r = _ref(b, 0.3, 0.05, n - 20, 1, 2.0, 3.0, 8)
     assert t.exit_i[1] == ref_j and abs(t.R[1] - ref_r) < 1e-9
+
+
+def test_attempt_cap_stops_forever_loop(tmp_path, hist, monkeypatch):
+    """Bitta ma'lumotda cheksiz urinish holdout'ni yodlab olishdir: limitdan keyin loop to'xtaydi."""
+    import selflearn_robot as sr
+    calls = []
+
+    class Dummy:
+        def __init__(self, cfg):
+            self.cfg = cfg
+
+        def load(self):
+            return False
+
+        def learn(self, h):
+            calls.append(self.cfg.attempt)
+            return sc.Report(mode="genetic", ok=False)
+
+    monkeypatch.setattr(sr, "load_engine", lambda c: Dummy(c))
+    monkeypatch.setenv("SL_MAX_ATTEMPTS", "3")
+    cfg = sc.Cfg(seed=1, state_dir=str(tmp_path))
+    eng, rep = sr.learn_repeat(cfg, hist, forever=True)
+    assert calls == [0, 1, 2]
+    calls.clear()
+    eng, rep = sr.learn_repeat(cfg, hist, forever=True)          # limit to'lgan: yangi urinish yo'q
+    assert calls == [] and not rep.ok
+
+
+def test_ml_objective_cycles_and_walk_forward_runs(hist, tmp_path, monkeypatch):
+    pytest.importorskip("sklearn")
+    import sl_ml as m
+    assert {m.objective_for(sc.Cfg(attempt=k)) for k in range(4)} == {"classify", "weighted"}
+    monkeypatch.setenv("SL_ML_OBJECTIVE", "weighted")
+    assert m.objective_for(sc.Cfg(attempt=0)) == "weighted"
+    e = m.Engine(cfg_for("ml", tmp_path))
+    rep = e.learn(hist.iloc[:60000])
+    assert rep.extra.get("objective") == "weighted"
+
+
+def test_ml_walk_forward_check_executes(hist, tmp_path, monkeypatch):
+    pytest.importorskip("sklearn")
+    import sl_ml as m
+    monkeypatch.setattr(sc, "gate", lambda cfg, seg, ch, rep=None: (True, []))
+    e = m.Engine(cfg_for("ml", tmp_path))
+    rep = e.learn(hist.iloc[:60000])
+    if "test" in rep.segments:                      # chegara topilgan bo'lsa walk-forward ishlagan bo'lishi shart
+        assert "walk_forward" in rep.extra and "folds" in rep.extra["walk_forward"]
