@@ -54,7 +54,7 @@ jobs:
           $out = Join-Path $env:RUNNER_TEMP 'selftest.json'
           $p = Start-Process -FilePath 'dist\MyOwnRobot\MyOwnRobot.exe' -ArgumentList '--self-test', $out -PassThru
           if (-not $p.WaitForExit(120000)) { $p.Kill(); if (Test-Path "$out.err") { Get-Content "$out.err" }; throw "self-test osilib qoldi (120 s)" }
-          if (Test-Path "$out.err") { Get-Content "$out.err" }
+          if (Test-Path "$out.err") { $e = (Get-Content "$out.err" -Raw); throw ("self-test xatosi: " + $e.Substring([Math]::Max(0, $e.Length - 1200))) }
           if ($p.ExitCode -ne 0) { throw "self-test chiqish kodi: $($p.ExitCode)" }
           $j = Get-Content $out | ConvertFrom-Json
           Write-Host "Versiya: $($j.version)  Manba: $($j.source)"
