@@ -89,7 +89,7 @@ class MainWindow(QMainWindow):
         brand = QHBoxLayout()
         brand.setContentsMargins(8, 4, 8, 18)
         bi = QLabel()
-        bi.setPixmap(T.render_svg(open(T._asset("icon.svg"), "rb").read(), 28))
+        bi.setPixmap(T.render_svg(T.ICON_SVG, 28))
         brand.addWidget(bi)
         bt = QLabel("MyOwnRobot")
         bt.setStyleSheet("font-size: 14px; font-weight: 600;")
