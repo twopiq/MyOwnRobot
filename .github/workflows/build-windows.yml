@@ -54,7 +54,8 @@ jobs:
           try {
             $out = Join-Path $env:RUNNER_TEMP 'selftest.json'
             $p = Start-Process -FilePath 'dist\MyOwnRobot\MyOwnRobot.exe' -ArgumentList '--self-test', $out -PassThru
-            if (-not $p.WaitForExit(120000)) {
+            Wait-Process -Id $p.Id -Timeout 120 -ErrorAction SilentlyContinue
+            if (-not $p.HasExited) {
               Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
               $cond = New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::ProcessIdProperty, $p.Id)
               $names = [Windows.Automation.AutomationElement]::RootElement.FindAll([Windows.Automation.TreeScope]::Descendants, $cond) | ForEach-Object { $_.Current.Name } | Where-Object { $_ }
