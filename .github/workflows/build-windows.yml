@@ -62,7 +62,7 @@ jobs:
               $diag = "json=$(Test-Path $out) err=$(if (Test-Path "$out.err") { (Get-Item "$out.err").Length } else { 'yoq' }) cpu=$($p.TotalProcessorTime) threads=$($p.Threads.Count) mem=$($p.WorkingSet64) exited=$($p.HasExited) files=$((Get-ChildItem 'dist\MyOwnRobot' | Measure-Object).Count) updates=$(Test-Path $env:MYOWNROBOT_UPDATES_DIR)"
               $p.Kill(); throw ("self-test osilib qoldi; " + $diag + "; oyna matni: " + ($names -join ' | '))
             }
-            if ((Test-Path "$out.err") -and (Get-Item "$out.err").Length -gt 0) { $e = (Get-Content "$out.err" -Raw); throw ("self-test xatosi: " + $e.Substring([Math]::Max(0, $e.Length - 1200))) }
+            if ((Test-Path "$out.err") -and (Get-Item "$out.err").Length -gt 0) { $e = (Get-Content "$out.err" -Raw); throw ("self-test xatosi: " + $e.Substring(0, [Math]::Min(1800, $e.Length))) }
             if ($p.ExitCode -ne 0) { throw "self-test chiqish kodi: $($p.ExitCode)" }
             $j = Get-Content $out | ConvertFrom-Json
             Write-Host "Versiya: $($j.version)  Manba: $($j.source)"
