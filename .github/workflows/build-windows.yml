@@ -51,15 +51,17 @@ jobs:
           QT_QPA_PLATFORM: offscreen
           MYOWNROBOT_UPDATES_DIR: ${{ runner.temp }}\no_updates
         run: |
-          $out = Join-Path $env:RUNNER_TEMP 'selftest.json'
-          $p = Start-Process -FilePath 'dist\MyOwnRobot\MyOwnRobot.exe' -ArgumentList '--self-test', $out -PassThru
-          if (-not $p.WaitForExit(120000)) { $p.Kill(); if (Test-Path "$out.err") { Get-Content "$out.err" }; throw "self-test osilib qoldi (120 s)" }
-          if (Test-Path "$out.err") { $e = (Get-Content "$out.err" -Raw); throw ("self-test xatosi: " + $e.Substring([Math]::Max(0, $e.Length - 1200))) }
-          if ($p.ExitCode -ne 0) { throw "self-test chiqish kodi: $($p.ExitCode)" }
-          $j = Get-Content $out | ConvertFrom-Json
-          Write-Host "Versiya: $($j.version)  Manba: $($j.source)"
-          if ($j.version -ne '${{ steps.ver.outputs.version }}') { throw "Versiya mos emas" }
-          if ($j.source -notlike '*app\myownrobot_app.zip') { throw "Kod zip'dan yuklanmadi" }
+          try {
+            $out = Join-Path $env:RUNNER_TEMP 'selftest.json'
+            $p = Start-Process -FilePath 'dist\MyOwnRobot\MyOwnRobot.exe' -ArgumentList '--self-test', $out -PassThru
+            if (-not $p.WaitForExit(120000)) { $p.Kill(); if (Test-Path "$out.err") { Get-Content "$out.err" }; throw "self-test osilib qoldi (120 s)" }
+            if (Test-Path "$out.err") { $e = (Get-Content "$out.err" -Raw); throw ("self-test xatosi: " + $e.Substring([Math]::Max(0, $e.Length - 1200))) }
+            if ($p.ExitCode -ne 0) { throw "self-test chiqish kodi: $($p.ExitCode)" }
+            $j = Get-Content $out | ConvertFrom-Json
+            Write-Host "Versiya: $($j.version)  Manba: $($j.source)"
+            if ($j.version -ne '${{ steps.ver.outputs.version }}') { throw "Versiya mos emas" }
+            if ($j.source -notlike '*app\myownrobot_app.zip') { throw "Kod zip'dan yuklanmadi" }
+          } catch { Write-Host ("::error::" + (($_ | Out-String) -replace "`r?`n"," | ")); exit 1 }
       - name: Robot .exe ichidan ishlashini sinash (--robot import + train)
         shell: pwsh
         env:
