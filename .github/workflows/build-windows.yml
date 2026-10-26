@@ -58,7 +58,8 @@ jobs:
               Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
               $cond = New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::ProcessIdProperty, $p.Id)
               $names = [Windows.Automation.AutomationElement]::RootElement.FindAll([Windows.Automation.TreeScope]::Descendants, $cond) | ForEach-Object { $_.Current.Name } | Where-Object { $_ }
-              $p.Kill(); throw ("self-test osilib qoldi; oyna matni: " + ($names -join ' | '))
+              $diag = "json=$(Test-Path $out) err=$(if (Test-Path "$out.err") { (Get-Item "$out.err").Length } else { 'yoq' }) cpu=$($p.TotalProcessorTime) threads=$($p.Threads.Count) mem=$($p.WorkingSet64) exited=$($p.HasExited) files=$((Get-ChildItem 'dist\MyOwnRobot' | Measure-Object).Count) updates=$(Test-Path $env:MYOWNROBOT_UPDATES_DIR)"
+              $p.Kill(); throw ("self-test osilib qoldi; " + $diag + "; oyna matni: " + ($names -join ' | '))
             }
             if ((Test-Path "$out.err") -and (Get-Item "$out.err").Length -gt 0) { $e = (Get-Content "$out.err" -Raw); throw ("self-test xatosi: " + $e.Substring([Math]::Max(0, $e.Length - 1200))) }
             if ($p.ExitCode -ne 0) { throw "self-test chiqish kodi: $($p.ExitCode)" }
