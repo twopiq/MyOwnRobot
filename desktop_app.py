@@ -101,16 +101,28 @@ def main() -> int:
         import mor.cli
         return mor.cli.main(sys.argv[2:])
     import mor.app
-    argv = list(sys.argv)
-    rc = mor.app.run_gui(argv)
-    if len(argv) > 2 and argv[1] == "--self-test":          # manba ma'lumotini qo'shamiz
-        with open(argv[2], encoding="utf-8") as f:
-            d = json.load(f)
-        d["source"] = source
-        with open(argv[2], "w", encoding="utf-8") as f:
-            json.dump(d, f)
-    return rc
+    os.environ["MYOWNROBOT_CODE_SOURCE"] = str(source)
+    return mor.app.run_gui(list(sys.argv))
+
+
+def _guarded() -> int:
+    if len(sys.argv) > 2 and sys.argv[1] == "--self-test":          # CI: osilib qolsa, qayerdaligini faylga yozadi
+        import faulthandler
+        faulthandler.dump_traceback_later(45, exit=True, file=open(sys.argv[2] + ".err", "w", encoding="utf-8"))
+    try:
+        return main()
+    except BaseException:
+        import traceback
+        if len(sys.argv) > 2 and sys.argv[1] == "--self-test":      # CI: xatoni faylga yozamiz (oynasiz .exe da konsol yo'q)
+            with open(sys.argv[2] + ".err", "w", encoding="utf-8") as f:
+                f.write(traceback.format_exc())
+            return 1                                              # oyna chiqmasin (PyInstaller xato oynasi CI ni osib qo'yadi)
+        raise
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    rc = _guarded()
+    if len(sys.argv) > 2 and sys.argv[1] == "--self-test":
+        sys.stdout.flush()
+        os._exit(rc or 0)                                         # oqimlar/taymerlar jarayonni ushlab turmasin
+    sys.exit(rc)

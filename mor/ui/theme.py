@@ -64,28 +64,14 @@ def icon(name: str, color: str = MUTED, size: int = 18) -> QIcon:
     return QIcon(svg(name, color, size))
 
 
+ICON_SVG = b'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><rect x="8" y="8" width="240" height="240" rx="56" fill="#121821"/><rect x="8.5" y="8.5" width="239" height="239" rx="55.5" fill="none" stroke="#2a3443"/><path d="M56 176 L104 112 L140 148 L196 72" fill="none" stroke="#3b82f6" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/><circle cx="196" cy="72" r="14" fill="#e7eaef"/><circle cx="56" cy="176" r="8" fill="#3b82f6"/></svg>'''   # mor/assets/icon.svg bilan bir xil (zip ichida fayl yo'q, shuning uchun kodda)
+
+
 def app_icon() -> QIcon:
-    from pathlib import Path
-    p = _asset("icon.svg")
     ic = QIcon()
-    if p:
-        data = Path(p).read_bytes()
-        for s in (16, 24, 32, 48, 64, 128, 256):
-            ic.addPixmap(render_svg(data, s))
+    for sz in (16, 24, 32, 48, 64, 128, 256):
+        ic.addPixmap(render_svg(ICON_SVG, sz))
     return ic
-
-
-def _asset(name: str):
-    from pathlib import Path
-    here = Path(__file__).resolve().parent.parent / "assets" / name
-    if here.exists():
-        return str(here)
-    base = getattr(sys, "_MEIPASS", None)
-    if base:
-        q = Path(base) / "mor_assets" / name
-        if q.exists():
-            return str(q)
-    return None
 
 
 def mono(size: int = 12, weight: int = 500) -> QFont:

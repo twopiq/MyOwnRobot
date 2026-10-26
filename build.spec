@@ -25,7 +25,7 @@ a = Analysis(
     binaries=binaries,
     datas=datas,
     # o'z modullarimiz faqat kutubxona bog'liqliklarini topish uchun tahlil qilinadi, keyin PYZ dan chiqariladi
-    hiddenimports=hidden + list(OURS) + ["mor.app", "mor.cli", "mor.updater", "mor.ui.update", "sqlite3", "MetaTrader5",
+    hiddenimports=hidden + list(OURS) + ["mor.app", "mor.cli", "mor.updater", "mor.ui.update", "sqlite3", "MetaTrader5", "PySide6.QtSvg", "PySide6.QtSvgWidgets",
                                          # kod yangilanishlarida kerak bo'lishi mumkin bo'lgan standart modullar
                                          "statistics", "urllib.request", "ssl", "hashlib", "zipfile", "tempfile",
                                          "subprocess", "shutil", "html", "csv", "importlib", "threading", "argparse",

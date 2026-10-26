@@ -1,6 +1,7 @@
 """Asosiy oyna: yon panel, sahifalar, fon ishlar (o'qitish / jonli savdo)."""
 from __future__ import annotations
 
+import os
 import sys
 from typing import Any, Dict, Optional
 
@@ -89,7 +90,7 @@ class MainWindow(QMainWindow):
         brand = QHBoxLayout()
         brand.setContentsMargins(8, 4, 8, 18)
         bi = QLabel()
-        bi.setPixmap(T.render_svg(open(T._asset("icon.svg"), "rb").read(), 28))
+        bi.setPixmap(T.render_svg(T.ICON_SVG, 28))
         brand.addWidget(bi)
         bt = QLabel("MyOwnRobot")
         bt.setStyleSheet("font-size: 14px; font-weight: 600;")
@@ -235,12 +236,14 @@ def run_gui(argv=None) -> int:
             w.go(k)
         with open(argv[2], "w", encoding="utf-8") as f:
             json.dump({"version": __version__, "pages": list(w.pages), "source": _source()}, f)
-        return 0
+        os._exit(0)          # Qt ni tartibli yopish ba'zi muhitlarda osilib qoladi — tekshiruv tugadi
     w.show()
     w.updates.start_auto()
     return app.exec()
 
 
 def _source() -> str:
+    if os.environ.get("MYOWNROBOT_CODE_SOURCE"):
+        return os.environ["MYOWNROBOT_CODE_SOURCE"]
     import mor
     return str(getattr(mor, "__file__", ""))

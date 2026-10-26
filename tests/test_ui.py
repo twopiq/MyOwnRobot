@@ -53,3 +53,8 @@ def test_import_and_short_training(tmp_path):
     m = Trainer(db, cfg).run()
     assert "val" in m and "test" in m and "gate_ok" in m
     assert db.latest_policy() is not None
+
+
+def test_icon_embedded_matches_file():
+    with open(os.path.join(os.path.dirname(__file__), "..", "mor", "assets", "icon.svg"), "rb") as f:
+        assert f.read().strip() == theme.ICON_SVG.strip()

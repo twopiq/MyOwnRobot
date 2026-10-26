@@ -51,13 +51,24 @@ jobs:
           QT_QPA_PLATFORM: offscreen
           MYOWNROBOT_UPDATES_DIR: ${{ runner.temp }}\no_updates
         run: |
-          $out = Join-Path $env:RUNNER_TEMP 'selftest.json'
-          $p = Start-Process -FilePath 'dist\MyOwnRobot\MyOwnRobot.exe' -ArgumentList '--self-test', $out -Wait -PassThru
-          if ($p.ExitCode -ne 0) { throw "self-test chiqish kodi: $($p.ExitCode)" }
-          $j = Get-Content $out | ConvertFrom-Json
-          Write-Host "Versiya: $($j.version)  Manba: $($j.source)"
-          if ($j.version -ne '${{ steps.ver.outputs.version }}') { throw "Versiya mos emas" }
-          if ($j.source -notlike '*app\myownrobot_app.zip') { throw "Kod zip'dan yuklanmadi" }
+          try {
+            $out = Join-Path $env:RUNNER_TEMP 'selftest.json'
+            $p = Start-Process -FilePath 'dist\MyOwnRobot\MyOwnRobot.exe' -ArgumentList '--self-test', $out -PassThru
+            Wait-Process -Id $p.Id -Timeout 120 -ErrorAction SilentlyContinue
+            if (-not $p.HasExited) {
+              Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+              $cond = New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::ProcessIdProperty, $p.Id)
+              $names = [Windows.Automation.AutomationElement]::RootElement.FindAll([Windows.Automation.TreeScope]::Descendants, $cond) | ForEach-Object { $_.Current.Name } | Where-Object { $_ }
+              $diag = "json=$(Test-Path $out) err=$(if (Test-Path "$out.err") { (Get-Item "$out.err").Length } else { 'yoq' }) cpu=$($p.TotalProcessorTime) threads=$($p.Threads.Count) mem=$($p.WorkingSet64) exited=$($p.HasExited) files=$((Get-ChildItem 'dist\MyOwnRobot' | Measure-Object).Count) updates=$(Test-Path $env:MYOWNROBOT_UPDATES_DIR)"
+              $p.Kill(); throw ("self-test osilib qoldi; " + $diag + "; oyna matni: " + ($names -join ' | '))
+            }
+            if ((Test-Path "$out.err") -and (Get-Item "$out.err").Length -gt 0) { $e = (Get-Content "$out.err" -Raw); throw ("self-test xatosi: " + $e.Substring(0, [Math]::Min(1800, $e.Length))) }
+            if ($p.ExitCode -ne 0) { throw "self-test chiqish kodi: $($p.ExitCode)" }
+            $j = Get-Content $out | ConvertFrom-Json
+            Write-Host "Versiya: $($j.version)  Manba: $($j.source)"
+            if ($j.version -ne '${{ steps.ver.outputs.version }}') { throw "Versiya mos emas" }
+            if ($j.source -notlike '*app\myownrobot_app.zip') { throw "Kod zip'dan yuklanmadi" }
+          } catch { Write-Host ("::error::" + (($_ | Out-String) -replace "`r?`n"," | ")); exit 1 }
       - name: Robot .exe ichidan ishlashini sinash (--robot import + train)
         shell: pwsh
         env:
