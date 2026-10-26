@@ -101,15 +101,8 @@ def main() -> int:
         import mor.cli
         return mor.cli.main(sys.argv[2:])
     import mor.app
-    argv = list(sys.argv)
-    rc = mor.app.run_gui(argv)
-    if len(argv) > 2 and argv[1] == "--self-test":          # manba ma'lumotini qo'shamiz
-        with open(argv[2], encoding="utf-8") as f:
-            d = json.load(f)
-        d["source"] = source
-        with open(argv[2], "w", encoding="utf-8") as f:
-            json.dump(d, f)
-    return rc
+    os.environ["MYOWNROBOT_CODE_SOURCE"] = str(source)
+    return mor.app.run_gui(list(sys.argv))
 
 
 def _guarded() -> int:
