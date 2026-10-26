@@ -113,6 +113,9 @@ def main() -> int:
 
 
 def _guarded() -> int:
+    if len(sys.argv) > 2 and sys.argv[1] == "--self-test":          # CI: osilib qolsa, qayerdaligini faylga yozadi
+        import faulthandler
+        faulthandler.dump_traceback_later(45, exit=True, file=open(sys.argv[2] + ".err", "w", encoding="utf-8"))
     try:
         return main()
     except BaseException:
