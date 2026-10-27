@@ -126,7 +126,8 @@ QComboBox QAbstractItemView {{ background: {CARD}; border: 1px solid {BORDER2}; 
 QCheckBox {{ spacing: 8px; }}
 QCheckBox::indicator {{ width: 16px; height: 16px; border-radius: 4px; border: 1px solid #34425a; background: #0f1319; }}
 QCheckBox::indicator:checked {{ background: {ACCENT}; border-color: {ACCENT}; }}
-QTableWidget, QListWidget {{ background: transparent; border: none; outline: 0; gridline-color: transparent; selection-background-color: {SEL}; selection-color: {TEXT}; }}
+QTableWidget, QListWidget {{ background: transparent; border: none; outline: 0; gridline-color: transparent; selection-background-color: {SEL}; }}
+QListWidget {{ selection-color: {TEXT}; }}
 QTableWidget::item {{ border-bottom: 1px solid {ROW}; padding: 0 10px; }}
 QHeaderView {{ background: transparent; }}
 QHeaderView::section {{ background: transparent; color: {DIM}; border: none; border-bottom: 1px solid {BORDER}; padding: 8px 10px; font-size: 11px; font-weight: 500; text-align: left; }}

@@ -58,3 +58,20 @@ def test_import_and_short_training(tmp_path):
 def test_icon_embedded_matches_file():
     with open(os.path.join(os.path.dirname(__file__), "..", "mor", "assets", "icon.svg"), "rb") as f:
         assert f.read().strip() == theme.ICON_SVG.strip()
+
+
+def test_selected_row_keeps_tone_color(tmp_path):
+    from mor.ui import widgets as W
+    app = QApplication.instance() or QApplication([])
+    app.setStyleSheet(theme.STYLE)
+    t = W.Table(["a", "b"])
+    t.resize(400, 150)
+    t.fill([["EURUSD", ("Tayyor", "up")], ["GBPUSD", ("Tayyor", "up")]], [1, 1])
+    t.show()
+    t.selectRow(1)
+    app.processEvents()
+    img = t.grab().toImage()
+    h = t.horizontalHeader().height()
+    green = sum(1 for y in range(h + 36, h + 72) for x in range(200, 400)
+                if img.pixelColor(x, y).green() > img.pixelColor(x, y).red() + 40)
+    assert green > 50

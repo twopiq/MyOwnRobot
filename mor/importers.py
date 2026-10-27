@@ -109,14 +109,29 @@ def import_csv(db, path: str, symbol: Optional[str] = None, tf: Optional[str] = 
     return {"symbol": symbol, "tf": out_tf, "bars": n, "start": str(df.index[0]), "end": str(df.index[-1])}
 
 
-def import_calendar_csv(db, path: str) -> int:
-    """Kalendar CSV: ustunlar time, currency, impact (1..3 yoki low/medium/high), title."""
-    df = pd.read_csv(path)
+def import_calendar_csv(db, path: str, tz_offset_hours: float = 0.0) -> int:
+    """Kalendar CSV: ustunlar time, currency, impact (0..3 yoki low/medium/high), title (+ ixtiyoriy actual/forecast/previous).
+
+    MQL5 skripti (mor/mql.py) yozgan format ham, qo'lda tayyorlangani ham o'qiladi. Vaqt "2022.01.03 15:30" yoki ISO bo'lishi
+    mumkin; tz_offset_hours — fayldagi vaqt UTC dan qancha soatga ilgarilab ketgan (narx CSV'dagi bilan bir xil qo'ying)."""
+    df = pd.read_csv(path, sep=None, engine="python", encoding="utf-8-sig")
     df.columns = [c.strip().lower() for c in df.columns]
-    imp_map = {"low": 1, "medium": 2, "med": 2, "high": 3}
-    imp = df["impact"].map(lambda x: imp_map.get(str(x).strip().lower(), x)).astype(int)
-    out = pd.DataFrame({"time": df["time"], "currency": df["currency"], "impact": imp,
-                        "title": df["title"] if "title" in df else ""})
+    if "importance" in df and "impact" not in df:
+        df = df.rename(columns={"importance": "impact"})
+    for need in ("time", "currency", "impact"):
+        if need not in df:
+            raise ValueError("Kalendar CSV da '%s' ustuni yo'q (kerak: time, currency, impact, title)" % need)
+    imp_map = {"none": 0, "low": 1, "medium": 2, "med": 2, "moderate": 2, "high": 3}
+    imp = pd.to_numeric(df["impact"].map(lambda x: imp_map.get(str(x).strip().lower(), x)), errors="coerce")
+    t = pd.to_datetime(df["time"].astype(str).str.strip().str.replace(r"^(\d{4})\.(\d{2})\.(\d{2})", r"\1-\2-\3", regex=True),
+                       errors="coerce")
+    ok = imp.notna() & t.notna() & (imp > 0) & df["currency"].notna()
+    if not ok.any():
+        raise ValueError("Kalendar CSV da yaroqli qator topilmadi (vaqt/ta'sir ustunlarini tekshiring)")
+    t = t[ok] - pd.Timedelta(hours=float(tz_offset_hours))
+    out = pd.DataFrame({"time": t.dt.tz_localize("UTC") if t.dt.tz is None else t.dt.tz_convert("UTC"),
+                        "currency": df.loc[ok, "currency"].astype(str).str.strip(), "impact": imp[ok].astype(int),
+                        "title": df.loc[ok, "title"].astype(str) if "title" in df else ""})
     return db.put_events(out)
 
 

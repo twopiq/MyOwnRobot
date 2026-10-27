@@ -6,7 +6,7 @@ from typing import Any, Dict, List
 
 from PySide6.QtCore import QDate, Qt
 from PySide6.QtWidgets import (QComboBox, QDateEdit, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout,
-                               QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMenu, QMessageBox, QPushButton,
+                               QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QInputDialog, QMenu, QMessageBox, QPushButton,
                                QVBoxLayout, QWidget)
 
 from .. import importers, paths
@@ -155,7 +155,8 @@ class DataPage(Page):
         c2.add(wrap)
         g.addWidget(c2, 0, 1)
         c3 = W.Card("Qo'shimcha manbalar")
-        self.src_cal = self._source("calendar", "Iqtisodiy kalendar", "", "Import", self.import_calendar)
+        self.src_cal = self._source("calendar", "Iqtisodiy kalendar", "", "Import", self.import_calendar,
+                                    extra=[("MQL5 skript", self.save_script)])
         self.src_spr = self._source("spread", "Spred tarixi", "", None, None)
         self.src_news = self._source("news", "Yangiliklar", "Manba ulanmagan", None, None)
         for s in (self.src_cal, self.src_spr, self.src_news):
@@ -163,7 +164,7 @@ class DataPage(Page):
         g.addWidget(c3, 1, 1)
         g.setRowStretch(1, 1)
 
-    def _source(self, ic, title, sub, btn, on):
+    def _source(self, ic, title, sub, btn, on, extra=()):
         w = QFrame()
         w.setObjectName("row")
         h = QHBoxLayout(w)
@@ -186,6 +187,10 @@ class DataPage(Page):
             b = W.button(btn, on=on)
             b.setFixedHeight(28)
             h.addWidget(b)
+        for text, cb in extra:
+            eb = W.button(text, on=cb)
+            eb.setFixedHeight(28)
+            h.addWidget(eb)
         return {"w": w, "sub": s, "tag": tg, "btn": b}
 
     # ------------------------------------------------------------ yangilash
@@ -211,7 +216,7 @@ class DataPage(Page):
         self.sub.setText("%d dataset" % len(ds) + ((" · " + min(fdate(d["start"])[:10] for d in ds) + " → " +
                                                   max(fdate(d["end"])[:10] for d in ds)) if ds else ""))
         ev = self.db.count("events")
-        self.src_cal["sub"].setText("%d voqea" % ev if ev else "CSV import qiling (time, currency, impact, title)")
+        self.src_cal["sub"].setText("%d voqea" % ev if ev else "MQL5 skript → CSV → Import")
         self.src_cal["tag"].setText("Ulangan" if ev else "Bo'sh")
         W.set_tone(self.src_cal["tag"], "up" if ev else "")
         has_spr = any(d["bars"] for d in ds)
@@ -259,16 +264,35 @@ class DataPage(Page):
             return out
         self._run(work, "Import")
 
-    def import_calendar(self) -> None:
-        f, _ = QFileDialog.getOpenFileName(self, "Kalendar CSV", "", "CSV (*.csv)")
+    def save_script(self) -> None:
+        from ..mql import CALENDAR_SCRIPT
+        f, _ = QFileDialog.getSaveFileName(self, "MQL5 skriptni saqlash", "ExportCalendar.mq5", "MQL5 (*.mq5)")
         if not f:
+            return
+        with open(f, "w", encoding="utf-8") as fh:
+            fh.write(CALENDAR_SCRIPT)
+        QMessageBox.information(
+            self, "MQL5 skript saqlandi",
+            "Keyingi qadamlar:\n1) Faylni MT5 → Fayl → Ma'lumotlar papkasini ochish → MQL5 → Scripts ichiga ko'chiring.\n"
+            "2) MetaEditor'da oching va F7 (kompilyatsiya) bosing.\n"
+            "3) MT5'da skriptni grafikka tashlang (Navigator → Scripts).\n"
+            "4) Natija MQL5/Files/calendar.csv — uni shu yerdagi «Import» bilan yuklang.")
+
+    def import_calendar(self) -> None:
+        f, _ = QFileDialog.getOpenFileName(self, "Kalendar CSV", "", "CSV (*.csv *.txt)")
+        if not f:
+            return
+        tz, ok = QInputDialog.getDouble(
+            self, "Vaqt siljishi", "Kalendar vaqti UTC dan necha soat oldinda?\n(narx CSV'ni import qilganda kiritgan qiymatingiz bilan bir xil;\n"
+            "narxni «MT5 dan yuklash» orqali olgan bo'lsangiz — 0)", 0, -12, 14, 1)
+        if not ok:
             return
         db_file = str(paths.db_path())
 
         def work(emit, stopped):
             db = Database(db_file)
             try:
-                return [{"events": importers.import_calendar_csv(db, f)}]
+                return [{"events": importers.import_calendar_csv(db, f, tz)}]
             finally:
                 db.close()
         self._run(work, "Kalendar")

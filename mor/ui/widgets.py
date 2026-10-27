@@ -4,9 +4,9 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPainterPath, QPalette, QPen
 from PySide6.QtWidgets import (QAbstractItemView, QFrame, QHBoxLayout, QHeaderView, QLabel, QPushButton, QSizePolicy, QSpacerItem,
-                               QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
+                               QStyledItemDelegate, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 from . import theme as T
 
@@ -132,6 +132,16 @@ class Divider(QFrame):
         self.setStyleSheet("background: %s;" % T.ROW)
 
 
+class _KeepTone(QStyledItemDelegate):
+    """Tanlangan qatorda ham katakning o'z rangi (yashil/qizil/sariq) saqlansin — oq bo'lib qolmasin."""
+
+    def initStyleOption(self, option, index) -> None:
+        super().initStyleOption(option, index)
+        fg = index.data(Qt.ForegroundRole)
+        if fg is not None:
+            option.palette.setBrush(QPalette.HighlightedText, fg if isinstance(fg, QBrush) else QBrush(fg))
+
+
 class Table(QTableWidget):
     """Dizayndagi jadval: sarlavha kichik harfda, qatorlar 36px, raqamlar mono."""
 
@@ -147,6 +157,7 @@ class Table(QTableWidget):
         self.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.setFocusPolicy(Qt.NoFocus)
+        self.setItemDelegate(_KeepTone(self))
         hh = self.horizontalHeader()
         hh.setHighlightSections(False)
         hh.setStretchLastSection(True)
