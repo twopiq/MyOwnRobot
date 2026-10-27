@@ -329,3 +329,24 @@ def test_live_guard_vetoes_entry(df, tmp_path):
     br = FakeBroker(df.iloc[:2000].copy())
     lr = LiveRunner(LiveCfg(), str(tmp_path / "p.npz"), br)
     assert lr.step_once()["action"] == "KUTISH" and not br.opened
+
+
+def test_calendar_import_mql_format(tmp_path):
+    from mor.db import Database
+    from mor.importers import import_calendar_csv
+    p = tmp_path / "calendar.csv"
+    p.write_text("time,currency,impact,title,actual,forecast,previous\n"
+                 "2022.01.07 15:30,USD,3,Nonfarm Payrolls,199.0,422.0,249.0\n"
+                 "2022.01.07 10:00,EUR,2,Some data,,,\n"
+                 "2022.01.08 10:00,EUR,0,Holiday,,,\n", encoding="utf-8")
+    db = Database(tmp_path / "c.db")
+    assert import_calendar_csv(db, str(p), tz_offset_hours=2) == 2           # ta'siri 0 bo'lgani tashlanadi
+    e = db.get_events(min_impact=3)
+    assert len(e) == 1 and e["currency"][0] == "USD"
+    import pandas as pd
+    assert pd.Timestamp(int(e["ts"][0]), unit="s", tz="UTC").strftime("%Y-%m-%d %H:%M") == "2022-01-07 13:30"   # 15:30 − 2 soat
+    p2 = tmp_path / "bad.csv"
+    p2.write_text("a,b\n1,2\n")
+    import pytest
+    with pytest.raises(ValueError):
+        import_calendar_csv(db, str(p2))
