@@ -30,6 +30,9 @@ def main(argv=None) -> int:
     t.add_argument("--symbols", default="")
     t.add_argument("--max-seconds", type=float, default=0)
     t.add_argument("--no-resume", action="store_true")
+    g = sub.add_parser("signal")
+    g.add_argument("--tf", default="M15")
+    g.add_argument("--symbols", default="")
     sub.add_parser("info")
     args = ap.parse_args(argv)
     db = Database(paths.db_path())
@@ -46,6 +49,11 @@ def main(argv=None) -> int:
                 print("epoxa %d/%d val %+.3fR (n=%d)" % (e["epoch"], e["epochs"], e["val"]["exp"], e["val"]["n"]), flush=True)
         m = Trainer(db, cfg, ev).run()
         print(json.dumps({k: m[k] for k in ("val", "test", "test_guard", "gate_ok", "gate")}, ensure_ascii=False, default=float))
+    elif args.cmd == "signal":
+        from . import signal as sg
+        from .trainer import load_series
+        rows = sg.check_all(load_series(db, TrainCfg(tf=args.tf, symbols=[x for x in args.symbols.upper().split(",") if x])))
+        print(json.dumps({"rows": rows, "advice": sg.advice(rows)}, ensure_ascii=False, default=float))
     else:
         print(json.dumps({"datasets": db.datasets(), "experiences": db.experience_stats(), "policy": db.latest_policy()},
                          ensure_ascii=False, default=str))
