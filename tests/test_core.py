@@ -350,3 +350,23 @@ def test_calendar_import_mql_format(tmp_path):
     import pytest
     with pytest.raises(ValueError):
         import_calendar_csv(db, str(p2))
+
+
+def test_signal_check_detects_noise_and_signal(tmp_path):
+    import numpy as np
+    import pandas as pd
+    from mor import signal as sg
+    from mor.env import make_series
+    rng = np.random.default_rng(0)
+    n = 6000
+    idx = pd.date_range("2022-01-03", periods=n, freq="15min")
+    ret = rng.normal(0, 0.001, n)
+    c = 1.1 * np.exp(np.cumsum(ret))
+    df = pd.DataFrame({"open": c, "high": c * 1.0005, "low": c * 0.9995, "close": c, "volume": 1.0, "spread": 1e-5}, index=idx)
+    r = sg.check_series(make_series("TEST", "M15", df))
+    assert r["verdict"] == "yo'q" and abs(r["val_corr"]) < 0.05
+    # kelajak harakatni oldindan bildiradigan (yo'l qo'yilmaydigan) belgi — tekshiruv uni "bor" deb topishi kerak
+    s = make_series("LEAK", "M15", df)
+    fut = np.r_[(s.c[4:] - s.c[:-4]) / s.atr[:-4], np.zeros(4)]
+    s.X[:, 0] = fut
+    assert sg.check_series(s)["verdict"] == "bor"

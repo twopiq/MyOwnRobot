@@ -67,11 +67,58 @@ class TrainingPage(Page):
         for w in self.hp.values():
             c3.add(w)
         right.addWidget(c3)
+        self.b_sig = W.button("Tekshirish", on=self.check_signal)
+        c4 = W.Card("Signal tekshiruvi", self.b_sig)
+        self.sig_table = W.Table(["Instr.", "Xarajat", "Val", "Test", "Xulosa"], mono_cols=(1, 2, 3))
+        self.sig_table.setFixedHeight(36 * 4 + 34)
+        c4.add(self.sig_table)
+        self.sig_note = W.label("O'qitishdan oldin: ma'lumotda kelajak narxni bashorat qiladigan narsa bormi? "
+                                "Korrelyatsiya ~0 bo'lsa, o'qitish foyda bermaydi.", "muted", wrap=True)
+        self.sig_note.setContentsMargins(16, 10, 16, 12)
+        c4.add(self.sig_note)
+        right.addWidget(c4)
         right.addStretch(1)
         mid.addLayout(right, 0, 1)
         self.t0 = 0.0
         self.val_series: List[Any] = []
         self.tr_series: List[Any] = []
+
+    # ------------------------------------------------------------ signal tekshiruvi
+    def check_signal(self) -> None:
+        if getattr(self, "sig_job", None) is not None:
+            return
+        from .. import paths, signal as sg
+        from ..db import Database
+        from ..trainer import load_series
+        from .workers import Job
+        cfg = self.settings.train_cfg()
+        db_file = str(paths.db_path())
+
+        def work(emit, stopped):
+            db = Database(db_file)
+            try:
+                rows = sg.check_all(load_series(db, cfg))
+                return {"rows": rows, "advice": sg.advice(rows)}
+            finally:
+                db.close()
+        self.sig_job = Job(work, self)
+        self.sig_job.finished_with.connect(self._signal_done)
+        self.b_sig.setEnabled(False)
+        self.sig_note.setText("Tekshirilmoqda…")
+        self.sig_job.start()
+
+    def _signal_done(self, res, err) -> None:
+        self.sig_job = None
+        self.b_sig.setEnabled(True)
+        if err is not None:
+            self.sig_note.setText("Xato: %s" % err)
+            return
+        tone = {"bor": "up", "zaif": "warn", "yo'q": "down"}
+        rows = [[r["symbol"], "%.3fR" % r["cost_r"], "%+.2f" % r["val_corr"], "%+.2f" % r["test_corr"],
+                 (r["verdict"].capitalize(), tone[r["verdict"]])] for r in res["rows"]]
+        self.sig_table.fill(rows, [10, 9, 8, 8, 9])
+        self.sig_note.setText(res["advice"] + ("" if all(r["news"] for r in res["rows"]) or not res["rows"]
+                                               else "  (Kalendar yuklanmagan — yangilik belgilari bo'sh.)"))
 
     # ------------------------------------------------------------ boshqaruv
     def start(self) -> None:
